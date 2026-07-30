@@ -1,90 +1,63 @@
 <script setup lang="ts">
 import { SignIn, OrganizationSwitcher, useAuth } from '@clerk/vue';
 import { ref, watch } from 'vue';
-import { fyo } from 'src/initFyoWeb';
 import { setClerkTokenGetter } from 'fyo/demux/dbWeb';
-import { initializeInstance } from 'src/utils/initialization';
+import AppWeb from 'src/AppWeb.vue';
 
 const { isSignedIn, isLoaded, orgId, getToken } = useAuth();
 
-const status = ref('Waiting for Clerk...');
-const ready = ref(false);
+const showOrgSwitcher = ref(false);
 const error = ref<string | null>(null);
-const tableCount = ref(0);
-
-let initStarted = false;
 
 watch(
   [isLoaded, isSignedIn, orgId],
-  async ([loaded, signedIn, activeOrgId]) => {
-    if (!loaded) {
-      status.value = 'Waiting for Clerk...';
-      return;
-    }
-    if (!signedIn) {
-      status.value = 'Signed out';
+  ([loaded, signedIn, activeOrgId]) => {
+    if (!loaded || !signedIn) {
       return;
     }
     if (!activeOrgId) {
-      status.value = 'Signed in - pick or create an organization below';
+      showOrgSwitcher.value = true;
       return;
     }
-    if (initStarted) {
-      return;
-    }
-    initStarted = true;
 
-    try {
-      // Must happen before any fyo.db.* call - see dbWeb.ts's comment on why this can't be
-      // wired at Fyo-construction time instead.
-      setClerkTokenGetter(() => getToken.value());
-
-      status.value = `Connecting to your organization's database...`;
-      const dbPath = 'web'; // ignored by DatabaseDemuxWeb - the org IS the database
-      const countryCode = await fyo.db.createNewDatabase(dbPath, 'TZ');
-
-      status.value = 'Loading schema and registering models...';
-      await initializeInstance(dbPath, true, countryCode, fyo);
-
-      tableCount.value = Object.keys(fyo.schemaMap).length;
-      status.value = `Connected. Country: ${countryCode}. ${tableCount.value} schemas loaded.`;
-      ready.value = true;
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : String(err);
-      status.value = 'Failed to initialize';
-    }
+    // Must happen before any fyo.db.* call runs inside AppWeb - see dbWeb.ts's comment on
+    // why this can't be wired at Fyo-construction time instead. Re-set on every org change
+    // too, in case the user switches organizations later - getToken.value() always reads
+    // whichever org is currently active in the Clerk session, so this doesn't need to be
+    // re-called per switch, just needs to have run once before AppWeb mounts.
+    setClerkTokenGetter(() => getToken.value());
+    showOrgSwitcher.value = false;
+    error.value = null;
   },
   { immediate: true },
 );
+
+function handleSwitchOrganization() {
+  // AppWeb emits this when the user wants to change companies (the web equivalent of the
+  // Electron app's "change db file" / DatabaseSelector flow). Unmounting AppWeb (by
+  // flipping this back to true) and showing OrganizationSwitcher again is enough - Clerk
+  // itself handles the actual org switch, and the watch above picks up the new orgId.
+  showOrgSwitcher.value = true;
+}
 </script>
 
 <template>
-  <div style="padding: 2rem; font-family: sans-serif">
-    <div v-if="!isLoaded">Loading Clerk...</div>
-
-    <div v-else-if="!isSignedIn">
-      <SignIn />
-    </div>
-
-    <div v-else-if="!orgId">
-      <p>{{ status }}</p>
-      <OrganizationSwitcher hide-personal />
-    </div>
-
-    <div v-else>
-      <p>{{ status }}</p>
-      <p v-if="error" style="color: red">{{ error }}</p>
-
-      <!--
-        This is a smoke-test shell proving auth -> org -> DatabaseDemuxWeb -> schema fetch
-        all work end to end - not the real app UI. The actual Desk/DatabaseSelector/
-        SetupWizard screen flow from App.vue still needs adapting on top of this (see the
-        chat response this file was delivered with for exactly what's still open).
-      -->
-      <div v-if="ready">
-        <p>Plumbing verified. {{ tableCount }} tables in schema map.</p>
-        <OrganizationSwitcher hide-personal />
-      </div>
-    </div>
+  <div v-if="!isLoaded" style="padding: 2rem; font-family: sans-serif">
+    Loading...
   </div>
+
+  <div v-else-if="!isSignedIn" style="padding: 2rem">
+    <SignIn />
+  </div>
+
+  <div v-else-if="showOrgSwitcher || !orgId" style="padding: 2rem; font-family: sans-serif">
+    <p>Pick or create a company to continue.</p>
+    <OrganizationSwitcher hide-personal />
+  </div>
+
+  <div v-else-if="error" style="padding: 2rem; color: red">
+    {{ error }}
+  </div>
+
+  <AppWeb v-else @switch-organization="handleSwitchOrganization" />
 </template>

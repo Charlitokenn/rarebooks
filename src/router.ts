@@ -165,7 +165,14 @@ if ((window as any).ipc?.on) {
 router.beforeEach(async (to, from, next) => {
   // Check license
   // Allow access to /license without license check
-  if (to.path !== '/license') {
+  // Guarded to Electron only - window.ipc doesn't exist on web, and there's no local
+  // "/license" page or Keymint device license there anyway. Subscription/billing gating
+  // for the web app happens server-side instead, in rarebooks-api's clerkAuth middleware
+  // (checks Organization.publicMetadata.subscriptionStatus, returns 402 if inactive) - by
+  // the time any fyo.db.* call would reach that check, this guard has already let
+  // navigation through, which is fine since the actual data calls are what's gated, not
+  // the route itself.
+  if (to.path !== '/license' && (window as unknown as { ipc?: unknown }).ipc) {
     try {
       // Check license validity via IPC
       const licenseState = await (window as any).ipc.invoke('get-license-state');
