@@ -344,3 +344,4 @@ function getLanguageDirection(language: string): 'rtl' | 'ltr' {
   return RTL_LANGUAGES.includes(language) ? 'rtl' : 'ltr';
 }
 </script>
+
