@@ -109,22 +109,6 @@ export class Main {
     registerAutoUpdaterListeners(this);
     registerAppLifecycleListeners(this);
     registerProcessListeners(this);
-    
-    // Custom: License management (fork-safe, can be disabled with ENABLE_LICENSING=false)
-    if (process.env.ENABLE_LICENSING !== 'false') {
-      // Lazy-load licensing on app ready to ensure env vars are loaded
-      app.whenReady().then(async () => {
-        try {
-          const registerLicenseIpcListeners = require('./custom/licensing/ipc/registerLicenseIpcListeners').default;
-          const { initializeLicensing } = await import('./custom/licensing');
-          
-          registerLicenseIpcListeners(this);
-          await initializeLicensing();
-        } catch (error) {
-          console.warn('Licensing module not available:', error);
-        }
-      });
-    }
   }
 
   getOptions(): BrowserWindowConstructorOptions {
