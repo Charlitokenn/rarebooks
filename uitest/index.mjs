@@ -82,3 +82,4 @@ const appSourcePath = path.join(root, 'dist_electron', 'build', 'main.js');
     t.ok(true, 'app closed without errors');
   });
 })();
+
