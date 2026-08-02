@@ -9,3 +9,4 @@ async function execute(dm: DatabaseManager) {
 }
 
 export default { execute, beforeMigrate: true };
+
