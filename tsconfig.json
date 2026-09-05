@@ -12,7 +12,7 @@
     "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
     "sourceMap": true,
-    "types": ["webpack-env"],
+    "types": ["webpack-env", "vite/client"],
     "baseUrl": ".",
     "paths": {
       "src/*": ["src/*"],
@@ -53,7 +53,9 @@
     "jobs/**/*.ts",
     "custom/**/*.ts",
     "custom/**/*.json",
-    "custom/**/*.vue"
+    "custom/**/*.vue",
+    "rendererWeb.ts",
+    "vite.config.web.ts"
   ],
   "exclude": ["node_modules"]
 }

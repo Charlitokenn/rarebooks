@@ -9,6 +9,13 @@ import { defineConfig } from 'vite';
  * root, since rendererWeb.ts and index.html live there per
  * context/architecture.md's target layout.
  *
+ * The HTML entry here MUST be named index.html, not index.web.html as an
+ * earlier version of this file had it: Vite's dev server only auto-serves
+ * a file literally named index.html at the configured root — anything
+ * else 404s at `/` and is only reachable by navigating to its exact
+ * filename. There's no existing index.html at repo root to collide with
+ * (Desktop's is at src/index.html, a different root).
+ *
  * Dev: `vite --config vite.config.web.ts`
  * Build: `vite build --config vite.config.web.ts` (outputs to dist_web/)
  *
