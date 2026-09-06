@@ -40,4 +40,4 @@ coverage/
 # Databases
 dbs/
 
-.wrangler
+worker/.wrangler
