@@ -51,54 +51,58 @@ Stand up the Hono API, Clerk auth, and the control plane Neon project. No accoun
 **Done when:** creating an organization auto provisions a dedicated Neon tenant project, the control plane project records the org, its tenant pointer, and subscription status, and a signed in user with a `READY` tenant reaches an empty dashboard shell.
 - [x] Design it (spec): `/architect web platform foundation & control plane`
 - [ ] Build it: `/develop web platform foundation & control plane`
-   - [x] `worker/` scaffold: Hono app, `@hono/clerk-auth` middleware, `wrangler.toml`
-   - [x] Control plane Neon project: `organizations`, `tenant_projects`, `subscriptions`, `payments` tables — schema written (`worker/db/schema.sql`), not yet applied to a real Neon project
-   - [x] `worker/routes/webhooks/organization-created.ts`: provisions a tenant Neon project on org creation, stores the encrypted connection string
-   - [x] `worker/db/control.ts` and `worker/db/resolve-tenant.ts`
-   - [x] `fyo/demux/*.ts` web implementation + `rendererWeb.ts` entry point, plus the sign-in/sign-up/org-creation/dashboard UI (`src/pages/web/`, `src/web/router.ts`)
+  - [x] `worker/` scaffold: Hono app, `@clerk/hono` middleware, `wrangler.toml`
+  - [x] Control plane Neon project: `organizations`, `tenant_projects`, `subscriptions`, `payments` tables — schema written (`worker/db/schema.sql`), not yet applied to a real Neon project
+  - [x] `worker/routes/webhooks/organization-created.ts`: provisions a tenant Neon project on org creation, stores the encrypted connection string
+  - [x] `worker/db/control.ts` and `worker/db/resolve-tenant.ts`
+  - [x] `fyo/demux/*.ts` web implementation + `rendererWeb.ts` entry point, plus the sign-in/sign-up/org-creation/dashboard UI (`src/pages/web/`, `src/web/router.ts`)
 - [ ] Verify it: `/check verify web platform foundation & control plane`
 - [ ] Test it: `/test web platform foundation & control plane`
 - [ ] Review it: `/check review web platform foundation & control plane`
 - [ ] Document it: `/document web platform foundation & control plane`
-Spec 0001. code in `worker/`, `custom/web/auth/`, `fyo/demux/`, `src/pages/web/`, `src/web/`, `rendererWeb.ts`
+  Spec 0001. code in `worker/`, `custom/web/auth/`, `fyo/demux/`, `src/pages/web/`, `src/web/`, `rendererWeb.ts`
 
-All 5 milestones are code-complete and typecheck clean (verified against real, currently-published package versions and types — `@neon/sdk`, `svix`, `@clerk/vue`, `@hono/clerk-auth` — not assumed from memory; two real bugs were caught and fixed this way: svix's `verify()` doesn't parse the payload, and `@neon/sdk`'s `orgId` is client-level config, not a per-call field). Not yet run against live infrastructure — no Cloudflare, Neon, or Clerk account is available in the build environment. Before `Build it` can be ticked: create the Neon, Clerk, and Cloudflare accounts/projects, set the secrets in `worker/wrangler.toml`'s comment block (including generating `TENANT_ENCRYPTION_KEY`), apply `worker/db/schema.sql` to the control plane project, and run `wrangler dev` end to end.
+All 5 milestones are code-complete and typecheck clean (verified against real, currently-published package versions and types — `@neon/sdk`, `@clerk/vue` — not assumed from memory; two real bugs were caught and fixed this way: svix's `verify()` doesn't parse the payload, and `@neon/sdk`'s `orgId` is client-level config, not a per-call field). A later commit swapped `@hono/clerk-auth` (deprecated) for `@clerk/hono`, and the hand rolled `svix` webhook verification for `@clerk/hono/webhooks`' `verifyWebhook`, which also fixed the payload parsing bug above; `worker/routes/webhooks/organization-created.ts` documents the swap.
+
+`/check verify` (2026-09-05) confirmed, running the worker locally (`npm install`, `tsc --noEmit`, `wrangler dev --local` with placeholder secrets): typecheck is clean; the server boots and `GET /` returns `200`; `/api/me` and `/api/dashboard` correctly return `401 Unauthenticated` with no session; `POST /webhooks/clerk/organization-created` correctly returns `400 Invalid webhook signature` for an unverified payload (AC-4's rejection path). All client side surfaces from the build plan exist (`fyo/demux/{auth,config,db}.ts` use `fetch()`, no `ipcRenderer`; `src/pages/web/{SignIn,SignUp,CreateOrganization,Dashboard}.vue`; `src/web/router.ts`; `rendererWeb.ts`), and `src/` has no direct import of `worker/` (one code comment mentions the path, not an import), holding the client/server invariant.
+
+Still blocked, not yet provable from the build/verify environment used: AC-1's actual sign up/sign in (needs a live Clerk instance), AC-2's real provisioning path and AC-3's tables (needs a live Neon project; `worker/db/schema.sql` is still unapplied to any real Neon project), and AC-5's `READY` dashboard gate for a real authenticated session. Charles confirmed local `.env`/secrets are in place on his own machine, but that hasn't yet been exercised in an environment with outbound access to Cloudflare, Neon, or Clerk, so `Verify it` stays unticked below. Before `Build it`/`Verify it` can be fully closed: confirm the Neon, Clerk, and Cloudflare accounts/projects are live, apply `worker/db/schema.sql` to the real control plane project, and run `wrangler dev` (or `wrangler deploy`) end to end against them.
 
 ### 07. Tenant schema & data layer · needs a decision
 Apply the accounting schema to freshly provisioned tenant projects, and route doc CRUD through the correct per tenant connection, so the same doctypes and forms Desktop already has work through the Web stack.
 **Done when:** a newly provisioned tenant project has the full accounting schema applied and marked `READY`, and generic doc CRUD routes read and write against the signed in org's own tenant project with no `org_id` column anywhere.
 - [ ] Design it (spec): `/architect tenant schema & data layer`
-Depends on 06.
+  Depends on 06.
 
 ### 08. Subscription gating & seat sync · needs a decision
 Implement access control, the thing that replaces Keymint on Web: subscription status gating plus Clerk's native per org seat cap.
 **Done when:** a request against tenant data is blocked before the tenant connection is even resolved when the org's subscription status is not `ACTIVE`, and `maxAllowedMemberships` on Clerk is kept in sync with the org's plan tier on every activation, plan change, and cancellation.
 - [ ] Design it (spec): `/architect subscription gating & seat sync`
-Depends on 07. Must never import or reference `custom/licensing/` (Keymint) anywhere in this phase.
+  Depends on 07. Must never import or reference `custom/licensing/` (Keymint) anywhere in this phase.
 
 ### 09. PayPal subscriptions (non Tanzania payments) · needs a decision
 Recurring subscription billing for tenants outside Tanzania.
 **Done when:** a tenant outside Tanzania can subscribe through PayPal, get charged on a recurring schedule, and the control plane's subscription and payments records update correctly from verified PayPal webhook events.
 - [ ] Design it (spec): `/architect paypal subscriptions`
-Depends on 08. Must never import or reference `custom/licensing/api/clickpesa-client.ts` (ClickPesa); PayPal fully replaces it on Web, not alongside it.
+  Depends on 08. Must never import or reference `custom/licensing/api/clickpesa-client.ts` (ClickPesa); PayPal fully replaces it on Web, not alongside it.
 
 ### 10. Lipa Namba manual payments (Tanzania payments) & admin review · needs a decision
 Manual mobile money payment instructions for Tanzania tenants, with no live payment API integration, verified by a super admin. Includes the super admin payment review page (the only admin surface currently in scope).
 **Done when:** a Tanzania tenant sees Lipa Namba payment instructions, submits a payment reference, a super admin can list, approve, or reject the pending claim, and an approved claim updates the org's subscription the same way a PayPal payment would.
 - [ ] Design it (spec): `/architect lipa namba manual payments`
-Depends on 08.
+  Depends on 08.
 
 ### 11. OneSignal notifications · needs a decision
 Port restock and payment notification triggers from ntfy (Desktop) to OneSignal (Web), reusing the existing trigger logic.
 **Done when:** a restock or payment method event on the web platform reliably sends a OneSignal push to the right org or user, using the same trigger conditions Desktop already tests.
 - [ ] Design it (spec): `/architect onesignal notifications`
-Depends on 07 (needs the tenant data layer to know what to notify about).
+  Depends on 07 (needs the tenant data layer to know what to notify about).
 
 ### 12. Deploy & cutover readiness · needs a decision
 Operational readiness: production deploy pipeline and a final check that the invariants hold before onboarding real customers.
 **Done when:** `wrangler deploy` ships the worker with production secrets configured, no Keymint or ClickPesa code is present in the deployed bundle, and a load or smoke test confirms multi tenant query scoping holds under concurrent tenants.
 - [ ] Design it (spec): `/architect deploy & cutover readiness`
-Depends on 09, 10, 11, and 13 (legal pages should be live before real customers are onboarded).
+  Depends on 09, 10, 11, and 13 (legal pages should be live before real customers are onboarded).
 
 ### 13. Legal & compliance pages
 Terms of Service, Privacy Policy, and basic compliance content, needed once real payments and tenant data are live. Not part of the original `context/build-plan.md` sub-phase list; added because Charles confirmed it in scope during planning.

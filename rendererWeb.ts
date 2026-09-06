@@ -31,6 +31,15 @@ const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as
   | string
   | undefined;
 
+// Temporary diagnostic — remove once the Clerk setup is confirmed working.
+// Masked so a real key never lands in full in the console/logs.
+console.log(
+  '[rendererWeb] VITE_CLERK_PUBLISHABLE_KEY:',
+  PUBLISHABLE_KEY
+    ? `${PUBLISHABLE_KEY.slice(0, 12)}… (${PUBLISHABLE_KEY.length} chars, starts with "${PUBLISHABLE_KEY.slice(0, 8)}")`
+    : `MISSING (value is: ${JSON.stringify(PUBLISHABLE_KEY)})`
+);
+
 if (!PUBLISHABLE_KEY) {
   throw new Error(
     'VITE_CLERK_PUBLISHABLE_KEY is not set — required for the Web target (see worker/wrangler.toml for the matching CLERK_PUBLISHABLE_KEY Worker secret)'
@@ -50,11 +59,21 @@ if (!PUBLISHABLE_KEY) {
   });
 
   app.use(webRouter);
-  app.use(clerkPlugin, {
+
+  const clerkOptions = {
     publishableKey: PUBLISHABLE_KEY,
     signInFallbackRedirectUrl: '/dashboard',
     signUpFallbackRedirectUrl: '/create-organization',
+  };
+  // Temporary diagnostic — remove once confirmed working. Logs the exact
+  // object clerkPlugin.install() receives, not just the key in isolation.
+  console.log('[rendererWeb] clerkPlugin options:', {
+    ...clerkOptions,
+    publishableKey: clerkOptions.publishableKey
+      ? `${clerkOptions.publishableKey.slice(0, 12)}…`
+      : clerkOptions.publishableKey,
   });
+  app.use(clerkPlugin, clerkOptions);
 
   app.mixin({
     computed: {

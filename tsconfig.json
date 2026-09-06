@@ -6,14 +6,14 @@
     "allowJs": true,
     "jsx": "preserve",
     "importHelpers": true,
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
     "sourceMap": true,
-    "types": ["webpack-env", "vite/client"],
-    "baseUrl": ".",
+    "types": ["vite/client"],
+    "baseUrl": "../../../Downloads/files",
     "paths": {
       "src/*": ["src/*"],
       "schemas/*": ["schemas/*"],
@@ -57,5 +57,5 @@
     "rendererWeb.ts",
     "vite.config.web.ts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "custom/web/**"]
 }

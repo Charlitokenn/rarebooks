@@ -33,7 +33,6 @@ import { setLanguageMap } from './utils/language';
   const app = createApp({
     template: '<App/>',
   });
-  app.config.unwrapInjectedRef = true;
   setErrorHandlers(app);
 
   app.use(router);
