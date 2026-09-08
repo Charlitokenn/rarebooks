@@ -15,10 +15,10 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { useAuth } from '@clerk/vue';
+import { useClerkAuth } from 'src/web/clerk';
 
 const router = useRouter();
-const { isLoaded, isSignedIn, orgId } = useAuth();
+const { isLoaded, isSignedIn, orgId } = useClerkAuth();
 
 type Status = 'CHECKING' | 'PROVISIONING' | 'READY' | 'FAILED';
 

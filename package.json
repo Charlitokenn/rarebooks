@@ -23,7 +23,8 @@
     "format": "prettier --write ."
   },
   "dependencies": {
-    "@clerk/vue": "^2.5.0",
+    "@clerk/clerk-js": "^6.31.0",
+    "@clerk/ui": "^1.32.2",
     "@codemirror/autocomplete": "^6.4.2",
     "@codemirror/lang-vue": "^0.1.1",
     "@popperjs/core": "^2.10.2",
