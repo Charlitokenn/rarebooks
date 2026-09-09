@@ -2,7 +2,7 @@
  * Provisions a new, isolated Neon project the moment a Clerk organization
  * is created, and records it in the control plane. This is the heart of
  * feature 0001 — everything else in the web migration depends on an org
- * having a READY tenant project.
+ * having a provisioned tenant project.
  *
  * Called from worker/routes/webhooks/organization-created.ts AFTER the
  * webhook signature has already been verified there — this function trusts
@@ -96,9 +96,9 @@ export async function handleOrganizationCreated(
       throw new Error('Tenant provisioning claim was lost before completion');
     }
 
-    // NOTE: status stays PROVISIONING here — feature 0002 (tenant schema
-    // & data layer) applies the accounting schema and is the one that
-    // flips status to READY, per docs/specs/0001 AC-1 and docs/specs/0002.
+    // The control-plane write moves the project to PROJECT_CREATED, which is
+    // enough for feature 0001's empty dashboard. Feature 0002 applies the
+    // accounting schema and advances it to READY for tenant data access.
   } catch (err) {
     await failTenantProjectClaim(controlDb, { orgId, claimId });
     throw err;

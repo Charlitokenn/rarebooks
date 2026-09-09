@@ -9,7 +9,7 @@ This decision applies the full accounting schema to a freshly provisioned tenant
 
 ## Context
 
-Feature 06 provisions an empty, isolated Neon project per organization but does not put the accounting schema into it or expose any way to read or write documents against it. Without this feature, an organization has a database with nothing in it and no route that talks to it. The accounting schema and business logic already exist and are shared between Desktop and Web by design (`fyo`, `../../models`, `../../reports`); the work here is routing, migration, and confirming Postgres flavored behavior matches SQLite flavored behavior closely enough that nothing in the shared layer needs to change.
+Feature 06 provisions an empty, isolated Neon project per organization and records it as `PROJECT_CREATED`, but does not put the accounting schema into it or expose any way to read or write documents against it. Without this feature, an organization can reach the empty feature 06 dashboard but has a database with nothing in it and no route that talks to it. The accounting schema and business logic already exist and are shared between Desktop and Web by design (`fyo`, `../../models`, `../../reports`); the work here is routing, migration, and confirming Postgres flavored behavior matches SQLite flavored behavior closely enough that nothing in the shared layer needs to change.
 
 ## Requirements
 
@@ -18,7 +18,7 @@ Feature 06 provisions an empty, isolated Neon project per organization but does 
 - As the platform, I need a generic way to read and write any doctype against a tenant's own project so that the same UI and business logic Desktop already has works on Web without a rewrite.
 
 **Acceptance criteria**:
-- **AC-1**: The accounting schema (Party, SalesInvoice, PurchaseInvoice, Payment, JournalEntry, Item, StockLedgerEntry, Account, and RareBooks's custom doctypes) is applied to a tenant project as the final step of provisioning, and `tenant_projects.status` only becomes `READY` once the migration succeeds.
+- **AC-1**: The accounting schema (Party, SalesInvoice, PurchaseInvoice, Payment, JournalEntry, Item, StockLedgerEntry, Account, and RareBooks's custom doctypes) is applied to a `PROJECT_CREATED` tenant project as the final migration step, and `tenant_projects.status` only becomes `READY` once the migration succeeds.
 - **AC-2**: Generic doc CRUD routes exist in `worker/routes/`, mirroring the actions `../../main/registerIpcMainActionListeners.ts` exposes on Desktop, each running after the tenant resolution middleware from feature 06.
 - **AC-3**: No tenant project table has an `org_id` column or any tenant filter; the resolved connection is the only tenant boundary.
 - **AC-4**: `models/**` and `reports/**` run correctly against a tenant's Neon project, with any Postgres versus SQLite query differences found and fixed.
@@ -49,7 +49,7 @@ Reusing the existing schema and business logic unmodified is the entire point of
 | Action | Value produced / displayed | Source |
 |---|---|---|
 | Any doc CRUD call | The tenant connection used | `worker/db/resolve-tenant.ts` from feature 06, keyed on the verified session's `org_id` |
-| Provisioning completion | `tenant_projects.status = 'READY'` | Set only after the schema migration against the fresh project returns success |
+| Accounting readiness | `tenant_projects.status = 'READY'` | Transitioned from feature 06's `PROJECT_CREATED` only after the schema migration against the fresh project returns success |
 
 **Key invariants**:
 - No `org_id` column or filter anywhere in tenant project tables; the resolved connection is the only tenant boundary.
@@ -60,12 +60,12 @@ Reusing the existing schema and business logic unmodified is the entire point of
 
 **Critical test scenarios**:
 - Happy path: an org's tenant project provisions, the schema migration succeeds, and a document can be created, read, updated, and deleted through the generic routes. Verifies **AC-1, AC-2**.
-- Failure case: the schema migration fails; `tenant_projects.status` stays out of `READY` and provisioning is surfaced as failed, not silently half done. Verifies **AC-1**.
+- Failure case: the schema migration fails; `tenant_projects.status` moves from `PROJECT_CREATED` to `FAILED`, never `READY`, and the failure is surfaced rather than silently leaving a half-migrated tenant. Verifies **AC-1**.
 - Data isolation: two different orgs' doc CRUD calls resolve to two different Neon connections and never touch each other's data. Verifies **AC-3**.
 
 ## Build plan
 
-1. Write the accounting schema migration script and wire it into `clerk-org-created.ts` as the final provisioning step. Satisfies **AC-1**.
+1. Write the accounting schema migration script and wire it into `worker/routes/webhooks/organization-created.ts` as the final provisioning step, advancing `PROJECT_CREATED` to `READY` only on success. Satisfies **AC-1**.
 2. Build generic `worker/routes/` doc CRUD handlers mirroring Desktop's IPC actions, each behind the feature 06 tenant resolution middleware. Satisfies **AC-2, AC-3**.
 3. Run `models/**`/`reports/**` against a real tenant Neon project and fix any Postgres versus SQLite query differences found. Satisfies **AC-4**.
 4. Build a migration runner utility that iterates `tenant_projects` for future schema rollouts. Satisfies **AC-5**.

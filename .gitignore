@@ -11,6 +11,7 @@ worker/.wrangler/
 
 # Environment
 .env
+.env.local
 .env.*.local
 .dev.vars
 

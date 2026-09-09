@@ -18,7 +18,7 @@ Desktop enforces access through Keymint, a device bound license with an offline 
 - As an organization admin, I want my plan's seat count to be enforced so that I cannot accidentally invite more members than I am paying for.
 
 **Acceptance criteria**:
-- **AC-1**: Every tenant data request checks the org's subscription status from the control plane `subscriptions` table before the tenant connection is even resolved; a non `ACTIVE` status is rejected with no partial tenant lookup performed.
+- **AC-1**: Every tenant data request loads the org's single authoritative subscription row from the control plane before the tenant connection is even resolved; a missing row or a non `ACTIVE` status is rejected with the established 402/403 billing response and no partial tenant lookup performed.
 - **AC-2**: A denied request routes the client to a billing or upgrade prompt; there is no offline grace period on Web.
 - **AC-3**: On every subscription activation, plan change, and cancellation or downgrade, the org's `maxAllowedMemberships` is synced to Clerk via the Backend API to match the new plan's seat count.
 - **AC-4**: Seat limits are never re-checked in `worker/middleware/`; Clerk's own enforcement is the only seat check.
@@ -36,7 +36,7 @@ Checking subscription status before resolving the tenant connection avoids wasti
 
 **Data model sketch**: No new tables. Reads `organizations.plan_seat_limit` and `subscriptions.status` from the control plane project (both created in feature 06). `plan_seat_limit` is written by this feature's Clerk sync step, as a record of intent, not read back for enforcement.
 
-**State transitions**: Request handling: `subscriptions.status === 'ACTIVE'` → request proceeds; anything else (`PAST_DUE`, `EXPIRED`, `PENDING_REVIEW`, `CANCELLED`) → request rejected, billing prompt shown.
+**State transitions**: Request handling: an authoritative row with `subscriptions.status === 'ACTIVE'` → request proceeds; a missing row or any other status (`PAST_DUE`, `EXPIRED`, `PENDING_REVIEW`, `SUSPENDED`, `CANCELLED`) → request rejected with the same 402/403 billing response, billing prompt shown. Rejection happens before tenant resolution.
 
 **API surface**:
 | Endpoint | Method | Key inputs | Key outputs | Auth | Key errors |
@@ -54,7 +54,7 @@ Checking subscription status before resolving the tenant connection avoids wasti
 - No offline grace period on Web; a denied request routes straight to a billing prompt.
 - This feature never imports or references `../../custom/licensing`.
 
-**Security model**: The gate reads only from the verified Clerk session's `org_id`, never a client supplied value. `maxAllowedMemberships` above 20 requires Clerk's paid B2B Authentication add on; any subscription tier planned above 20 seats needs that add on confirmed before launch.
+**Security model**: The gate reads only from the verified Clerk session's `org_id`, never a client supplied value, and fails closed when no authoritative subscription row exists. `maxAllowedMemberships` above 20 requires Clerk's paid B2B Authentication add on; any subscription tier planned above 20 seats needs that add on confirmed before launch.
 
 **Configuration required**:
 - Uses `CLERK_SECRET_KEY` and `CONTROL_DATABASE_URL` already configured in feature 06; no new secrets.
@@ -62,6 +62,7 @@ Checking subscription status before resolving the tenant connection avoids wasti
 **Critical test scenarios**:
 - Happy path: an org with an `ACTIVE` subscription and a tenant project has its tenant data requests succeed. Verifies **AC-1**.
 - Failure case: an org with a `PAST_DUE` or `EXPIRED` subscription has its tenant data requests rejected before any tenant connection is resolved, and is shown a billing prompt. Verifies **AC-1, AC-2**.
+- Missing state: an org with no authoritative subscription row receives the same 402/403 billing response before tenant resolution; absence is never treated as active or allowed. Verifies **AC-1, AC-2**.
 - Seat sync: a subscription plan change updates the org's `maxAllowedMemberships` on Clerk, and Clerk itself then blocks a new invite over the new cap. Verifies **AC-3, AC-4**.
 
 ## Build plan

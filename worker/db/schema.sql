@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS tenant_projects (
   region text NOT NULL,
   provisioning_claim_id text,
   status text NOT NULL DEFAULT 'PROVISIONING'
-    CHECK (status IN ('PROVISIONING', 'READY', 'SUSPENDED', 'FAILED')),
+    CHECK (status IN ('PROVISIONING', 'PROJECT_CREATED', 'READY', 'SUSPENDED', 'FAILED')),
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -27,11 +27,11 @@ CREATE TABLE IF NOT EXISTS tenant_projects (
 
 CREATE TABLE IF NOT EXISTS subscriptions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id text NOT NULL REFERENCES organizations(id),
+  org_id text NOT NULL UNIQUE REFERENCES organizations(id),
   provider text NOT NULL CHECK (provider IN ('paypal', 'lipa_namba')),
   status text NOT NULL
     CHECK (status IN ('ACTIVE', 'PAST_DUE', 'EXPIRED', 'PENDING_REVIEW', 'SUSPENDED', 'CANCELLED')),
-  paypal_subscription_id text,
+  paypal_subscription_id text UNIQUE,
   current_period_end timestamptz,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS payments (
   amount numeric NOT NULL,
   status text NOT NULL,
   reference text,
+  provider_event_id text,
   reviewed_by text,                  -- Clerk user ID of the approving super admin (lipa_namba only)
   created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -50,3 +51,6 @@ CREATE TABLE IF NOT EXISTS payments (
 CREATE INDEX IF NOT EXISTS idx_subscriptions_org_id ON subscriptions(org_id);
 CREATE INDEX IF NOT EXISTS idx_payments_org_id ON payments(org_id);
 CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_provider_event_id
+  ON payments(provider, provider_event_id)
+  WHERE provider_event_id IS NOT NULL;

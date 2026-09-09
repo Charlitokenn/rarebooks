@@ -140,8 +140,8 @@ _(No project-wide analytics/telemetry SDK is wired in beyond the notification te
 | -------------------------- | ---------------------------------------------- |
 | `CLERK_SECRET_KEY`         | `worker/` Clerk middleware (`@hono/clerk-auth`) |
 | `CLERK_PUBLISHABLE_KEY`    | `worker/` Clerk middleware, `src/` client-side Clerk components |
-| `CLERK_WEBHOOK_SIGNING_SECRET` | `worker/routes/webhooks/clerk-org-created.ts` (Svix signature verification — separate secret from `CLERK_SECRET_KEY`, per-endpoint from the Clerk Dashboard) |
-| `NEON_API_KEY`             | `worker/routes/webhooks/clerk-org-created.ts` (provisions a new tenant project per org via `@neon/sdk`) |
+| `CLERK_WEBHOOK_SIGNING_SECRET` | `worker/routes/webhooks/organization-created.ts` (Svix signature verification — separate secret from `CLERK_SECRET_KEY`, per-endpoint from the Clerk Dashboard) |
+| `NEON_API_KEY`             | `worker/routes/webhooks/organization-created.ts` (provisions a new tenant project per org via `@neon/sdk`) |
 | `NEON_ACCOUNT_ORG_ID`      | `worker/db/` — OUR Neon account's own org ID (unrelated to Clerk orgs — see `library-docs.md` → Neon), passed once to `createNeonClient()` |
 | `CONTROL_DATABASE_URL`     | `worker/db/control.ts` — the single, fixed connection to the shared control-plane project (org/subscription/payment tables) |
 | `TENANT_CONNECTION_ENCRYPTION_KEY` | `worker/db/` — encrypts/decrypts `tenant_projects.connection_string` at rest |

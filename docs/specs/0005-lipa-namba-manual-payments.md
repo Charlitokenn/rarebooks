@@ -22,7 +22,7 @@ ClickPesa gave Desktop a live USSD push integration for Tanzania mobile money, b
 - **AC-2**: Submitting a payment reference writes a `payments` row with `provider = 'lipa_namba'` and `status = 'PENDING_REVIEW'`; no claim is ever auto approved.
 - **AC-3**: A super admin only route lists pending claims and lets a super admin approve or reject each one.
 - **AC-4**: Approving a claim sets `payments.status = 'APPROVED'`, records `reviewed_by` as the approving super admin's Clerk user ID, and updates `subscriptions` the same way a PayPal activation would.
-- **AC-5**: The super admin authorization check is a distinct RareBooks level role, separate from normal org scoped access, and separate from Clerk's own built in roles.
+- **AC-5**: The super admin authorization check is a distinct RareBooks level role sourced only from a server-controlled allow list or server-validated Clerk private metadata. Client-writable metadata and request fields are never authorization inputs, regardless of their values.
 - **AC-6**: No API integration with any Tanzania mobile money provider exists on Web for this feature; it is instructions, manual claim, and manual review by design.
 
 ## Decision
@@ -35,7 +35,7 @@ Building a live mobile money integration for Web would duplicate ClickPesa's com
 
 ## Feature design
 
-**Data model sketch**: No new tables; writes to `payments` in the control plane project (feature 06). `payments.provider = 'lipa_namba'`, `payments.reference` set to the user submitted transaction reference, `payments.reviewed_by` set only on approval. The super admin role itself is implemented as an explicit allow list or a Clerk metadata flag, not a new table.
+**Data model sketch**: No new tables; writes to `payments` in the control plane project (feature 06). `payments.provider = 'lipa_namba'`, `payments.reference` set to the user submitted transaction reference, `payments.reviewed_by` set only on approval. The super admin role itself is implemented as a server-controlled allow list or server-validated Clerk private metadata, not a new table; public or client-writable metadata is explicitly ineligible.
 
 **State transitions**: `payments.status`: `PENDING_REVIEW` → `APPROVED` (super admin approves, `subscriptions` updated) or `REJECTED` (super admin rejects, no subscription change).
 
@@ -59,7 +59,7 @@ Building a live mobile money integration for Web would duplicate ClickPesa's com
 - The super admin route group is behind its own authorization check, separate from normal org scoped access.
 - No live mobile money API call exists in this feature.
 
-**Security model**: The claim submission route is scoped to the submitting user's own org via their verified session. The admin review routes require the distinct super admin check in `worker/middleware/`; a signed in user who is not flagged as super admin gets 403 regardless of their org role.
+**Security model**: The claim submission route is scoped to the submitting user's own org via their verified session. The admin review routes require the distinct super admin check in `worker/middleware/`, using only a server-controlled allow list or Clerk private metadata fetched and validated server-side. A signed in user who is not authorized there gets 403 regardless of org role, request fields, public metadata, or altered client-side metadata.
 
 **Configuration required**:
 - A project configuration value for the displayed paybill/business number and instructions text (env var or admin editable setting, not hardcoded)
@@ -68,12 +68,13 @@ Building a live mobile money integration for Web would duplicate ClickPesa's com
 - Happy path: a tenant submits a claim, a super admin approves it, and the org's subscription updates to `ACTIVE`. Verifies **AC-2, AC-4**.
 - Failure case: a super admin rejects a claim; `payments.status` becomes `REJECTED` and no subscription change happens. Verifies **AC-4**.
 - Auth/permission: a signed in user who is not a super admin is denied access to the admin review routes even if they belong to an org with an active subscription. Verifies **AC-3, AC-5**.
+- Tampering: a non-super-admin alters client-writable metadata or sends a super-admin request field and still receives 403. Verifies **AC-5**.
 
 ## Build plan
 
 1. Build the billing page Lipa Namba instructions panel and the claim submission form, reading instructions from project configuration. Satisfies **AC-1**.
 2. Build `custom/web/payments/lipa-namba.ts`, the claim submission route writing a `PENDING_REVIEW` `payments` row. Satisfies **AC-2**.
-3. Build the super admin authorization check in `worker/middleware/`. Satisfies **AC-5**.
+3. Build the super admin authorization check in `worker/middleware/` from a server-controlled allow list or server-validated Clerk private metadata, with tests proving client metadata and request-field tampering still returns 403. Satisfies **AC-5**.
 4. Build the super admin payment review page (list, approve, reject) and the approve/reject routes, updating `payments` and `subscriptions`. Satisfies **AC-3, AC-4**.
 
 ## Consequences

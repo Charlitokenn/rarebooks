@@ -24,7 +24,7 @@ The two realistic multi tenancy shapes are a shared database with an `org_id` co
 - **AC-2**: Creating a Clerk organization triggers automatic provisioning of a new, isolated Neon project for that organization, with no manual step.
 - **AC-3**: The control plane project records the organization (`organizations`), the org to tenant project mapping (`tenant_projects`), and placeholder rows the later billing features will populate (`subscriptions`, `payments`).
 - **AC-4**: The tenant project's connection string is encrypted at rest in the control plane project and is never logged, returned in an API response, or exposed to the client.
-- **AC-5**: A signed in user whose org's tenant project is `READY` reaches an empty dashboard shell; a user whose org has no `READY` tenant project does not.
+- **AC-5**: A signed in user whose org's tenant project is `PROJECT_CREATED` (or the later `READY` state) reaches an empty dashboard shell; a user whose org is still `PROVISIONING`, has no tenant project, or is `FAILED` does not. `PROJECT_CREATED` is produced by feature 06 and does not depend on feature 07's accounting migration.
 - **AC-6**: `fyo/demux/*.ts` gets a web implementation that calls the Hono API via `fetch()`, and `rendererWeb.ts` is the browser entry point; no other client code becomes platform aware.
 
 ## Decision
@@ -42,27 +42,27 @@ Physical isolation (a separate Neon project per tenant) trades a small per reque
 **Data model sketch** (control plane project, one project shared across all tenants):
 
 - `organizations`: `id` (text, Clerk org ID, primary key), `name` (text), `plan_seat_limit` (integer, kept in sync with Clerk's `maxAllowedMemberships`, a record of intent not a per request check), `created_at` (timestamptz)
-- `tenant_projects`: `org_id` (text, primary key, references `organizations.id`), `neon_project_id` (text), `connection_string` (text, encrypted at rest, AES-256-GCM, same pattern as Desktop's Keymint license cache), `region` (text), `status` (text: `PROVISIONING`, `READY`, `SUSPENDED`, `FAILED`), `created_at` (timestamptz)
-- `subscriptions`: `id` (uuid, primary key), `org_id` (text), `provider` (text: `paypal` or `lipa_namba`), `status` (text: `ACTIVE`, `PAST_DUE`, `EXPIRED`, `PENDING_REVIEW`, `CANCELLED`), `paypal_subscription_id` (text, nullable), `current_period_end` (timestamptz, nullable), `updated_at` (timestamptz). Populated by features 09 and 10; this feature only creates the table.
-- `payments`: `id` (uuid, primary key), `org_id` (text), `provider` (text), `amount` (Currency), `status` (text), `reference` (text), `reviewed_by` (text, nullable), `created_at` (timestamptz). Populated by features 09 and 10; this feature only creates the table.
+- `tenant_projects`: `org_id` (text, primary key, references `organizations.id`), `neon_project_id` (text), `connection_string` (text, encrypted at rest, AES-256-GCM, same pattern as Desktop's Keymint license cache), `region` (text), `status` (text: `PROVISIONING`, `PROJECT_CREATED`, `READY`, `SUSPENDED`, `FAILED`), `created_at` (timestamptz)
+- `subscriptions`: `id` (uuid, primary key), `org_id` (text, unique, one authoritative current row per organization), `provider` (text: `paypal` or `lipa_namba`), `status` (text: `ACTIVE`, `PAST_DUE`, `EXPIRED`, `PENDING_REVIEW`, `SUSPENDED`, `CANCELLED`), `paypal_subscription_id` (text, nullable, unique), `current_period_end` (timestamptz, nullable), `updated_at` (timestamptz). Activations, plan changes, cancellations, and retried webhooks upsert this row by `org_id`; provider changes replace its provider-specific fields in the same transaction. Populated by features 09 and 10; this feature only creates the table.
+- `payments`: `id` (uuid, primary key), `org_id` (text), `provider` (text), `amount` (Currency), `status` (text), `reference` (text), `provider_event_id` (text, nullable, unique with `provider` for webhook-backed payments), `reviewed_by` (text, nullable), `created_at` (timestamptz). Populated by features 09 and 10; this feature only creates the table.
 
 Each tenant project gets the standard accounting schema (Party, SalesInvoice, PurchaseInvoice, Payment, JournalEntry, Item, StockLedgerEntry, Account, and RareBooks's custom additions), Postgres flavored instead of SQLite flavored, with no `org_id` column anywhere; applying that schema is feature 07's job, not this one; this feature only needs the tenant project to exist and be reachable.
 
-**State transitions**: `tenant_projects.status`: `PROVISIONING` → `READY` (schema applied successfully, feature 07) or `FAILED` (provisioning or schema failed); `READY` → `SUSPENDED` (operational, out of scope here).
+**State transitions**: `tenant_projects.status`: `PROVISIONING` → `PROJECT_CREATED` (feature 06 successfully created and recorded the Neon project) or `FAILED` (project provisioning failed); `PROJECT_CREATED` → `READY` (feature 07 applied the accounting schema) or `FAILED` (schema migration failed); `READY` → `SUSPENDED` (operational, out of scope here).
 
 **API surface**:
 | Endpoint | Method | Key inputs | Key outputs | Auth | Key errors |
 |---|---|---|---|---|---|
 | `/api/me` | GET | none (session) | `userId`, `orgId`, `orgRole` | Clerk session | 401 unauthenticated |
 | `/webhooks/clerk/organization-created` | POST | Clerk webhook payload, svix headers | 200 on success | svix signature | 400 unverified signature |
-| `/api/dashboard` | GET | none (session) | empty dashboard shell payload | Clerk session + org's tenant `READY` | 401, 403 (org not ready) |
+| `/api/dashboard` | GET | none (session) | empty dashboard shell payload with `PROJECT_CREATED` or `READY` status | Clerk session + provisioned org tenant | 401; 202 while provisioning; 500 failed provisioning |
 
 **Value sourcing**:
 | Action | Value produced / displayed | Source |
 |---|---|---|
 | Org creation | New Neon project + connection string | Neon API `createAndConnect()` via `@neon/sdk`, our own Neon account (`NEON_ACCOUNT_ORG_ID`, static, not per tenant) |
 | Every tenant request | The tenant's Neon connection | `worker/db/resolve-tenant.ts`, control plane lookup of `tenant_projects` by the Clerk `org_id` from the verified session, decrypted in memory, short TTL cached per request, never cached across different orgs |
-| Dashboard reachability | Whether to allow or block | `tenant_projects.status === 'READY'` for the signed in user's `org_id` |
+| Dashboard reachability | Whether to allow or block | `tenant_projects.status` is `PROJECT_CREATED` or `READY` for the signed in user's `org_id` |
 | `tenant_projects.connection_string` encryption key | The AES-256-GCM key used to encrypt/decrypt it | `TENANT_ENCRYPTION_KEY`, a dedicated Worker secret: a random 32 byte key generated once and stored in Cloudflare, never derived from another secret. Decided during `/develop` on 2026-09-03, since the spec did not originally name a source; see Configuration required. |
 
 **Key invariants**:
@@ -81,19 +81,19 @@ Each tenant project gets the standard accounting schema (Party, SalesInvoice, Pu
 - `TENANT_ENCRYPTION_KEY`: a dedicated, randomly generated 32 byte AES-256-GCM key (Worker secret) used only to encrypt and decrypt `tenant_projects.connection_string`; generated once and stored in Cloudflare, not derived from any other secret
 
 **Critical test scenarios**:
-- Happy path: a new user signs up, creates an org, the org's Neon project provisions and reaches `READY`, and the user reaches the empty dashboard. Verifies **AC-1, AC-2, AC-5**.
+- Happy path: a new user signs up, creates an org, feature 06 records the provisioned Neon project as `PROJECT_CREATED`, and the user reaches the empty dashboard before feature 07 runs. Verifies **AC-1, AC-2, AC-5**.
 - Failure case: Neon project provisioning fails (a `4xx`/`5xx`/`operation` error from `@neon/sdk`); `tenant_projects.status` is set to `FAILED`, not left `PROVISIONING` indefinitely, and the user sees a clear failure state rather than an infinite loading dashboard. Verifies **AC-2**.
-- Auth/permission: a signed in user whose org has no `READY` tenant project is blocked from the dashboard route. Verifies **AC-5**.
+- Auth/permission: a signed in user whose org has no tenant project, or whose project is still `PROVISIONING` or `FAILED`, cannot reach the dashboard shell; both `PROJECT_CREATED` and `READY` can. Verifies **AC-5**.
 - Security: an unverified `organization.created` webhook payload (bad or missing svix signature) is rejected before any provisioning call runs. Verifies **AC-2, AC-4**.
 
 ## Build plan
 
 1. Scaffold `worker/`: Hono app, `@clerk/hono` middleware, `wrangler.toml`. Satisfies **AC-1**.
 2. Provision the control plane Neon project (once) and create the `organizations`, `tenant_projects`, `subscriptions`, `payments` tables. Satisfies **AC-3**.
-3. Build `worker/routes/webhooks/organization-created.ts`: verify the webhook via `@clerk/hono/webhooks`, then call `@neon/sdk`'s `createAndConnect()` to provision a tenant project, encrypt the connection string, and write the `tenant_projects` row. Satisfies **AC-2, AC-4**.
+3. Build `worker/routes/webhooks/organization-created.ts`: verify the webhook via `@clerk/hono/webhooks`, then call `@neon/sdk`'s `createAndConnect()` to provision a tenant project, encrypt the connection string, and write the `tenant_projects` row as `PROJECT_CREATED`. Satisfies **AC-2, AC-4**.
 4. Build `worker/db/control.ts` (fixed control plane connection) and `worker/db/resolve-tenant.ts` (per request tenant lookup, decrypt, short TTL cache). Satisfies **AC-4**.
 5. Build the `fyo/demux/*.ts` web implementation (swap `ipcRenderer` calls for `fetch()` against `worker/`) and `rendererWeb.ts`, the browser entry point. Satisfies **AC-6**.
-6. Build the sign in, sign up, org creation UI (Clerk components) and the empty dashboard shell, gated on `tenant_projects.status === 'READY'`. Satisfies **AC-5**.
+6. Build the sign in, sign up, org creation UI (Clerk components) and the empty dashboard shell, gated on `tenant_projects.status` being `PROJECT_CREATED` or `READY`. Satisfies **AC-5**.
 
 ## Consequences
 

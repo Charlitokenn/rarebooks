@@ -4,10 +4,7 @@ import {
   type HandleOrgCreatedEnv,
   type NeonProvisioningClient,
 } from '../custom/web/auth/handleOrganizationCreated';
-import type {
-  ControlDb,
-  TenantProjectRow,
-} from '../worker/db/control';
+import type { ControlDb, TenantProjectRow } from '../worker/db/control';
 
 const env: HandleOrgCreatedEnv = {
   CONTROL_DATABASE_URL: 'unused-in-tests',
@@ -85,6 +82,7 @@ function createControlDb(): { db: ControlDb; state: ControlDbState } {
       state.tenant.neon_project_id = values[0] as string;
       state.tenant.connection_string = values[1] as string;
       state.tenant.region = values[2] as string;
+      state.tenant.status = 'PROJECT_CREATED';
       state.tenant.provisioning_claim_id = null;
       return [{ org_id: orgId }];
     }
@@ -128,6 +126,7 @@ test('concurrent organization deliveries provision one tenant project', async (t
   releaseProvisioning?.();
   await firstDelivery;
   t.equal(state.tenant?.neon_project_id, 'project-1');
+  t.equal(state.tenant?.status, 'PROJECT_CREATED');
   t.equal(state.tenant?.provisioning_claim_id, null);
   t.end();
 });
@@ -163,7 +162,7 @@ test('a delivery retries an atomically reclaimed failed tenant', async (t) => {
   await handleOrganizationCreated(event, env, neonClient, db);
 
   t.equal(provisionCount, 2, 'the next delivery provisions after reclaiming');
-  t.equal(state.tenant?.status, 'PROVISIONING');
+  t.equal(state.tenant?.status, 'PROJECT_CREATED');
   t.equal(state.tenant?.neon_project_id, 'project-after-retry');
   t.equal(state.tenant?.provisioning_claim_id, null);
   t.end();
