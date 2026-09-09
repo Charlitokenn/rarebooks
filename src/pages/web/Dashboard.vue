@@ -1,6 +1,6 @@
 <!--
   This feature's finish line (AC-5): signed in + org created + tenant
-  project READY = an empty dashboard reachable. No accounting data here —
+  project PROJECT_CREATED (or later READY) = an empty dashboard reachable. No accounting data here —
   that starts with feature 0002 (tenant schema & data layer).
 
   Deliberately a direct fetch() to /api/dashboard, NOT
@@ -20,7 +20,12 @@ import { useClerkAuth } from 'src/web/clerk';
 const router = useRouter();
 const { isLoaded, isSignedIn, orgId } = useClerkAuth();
 
-type Status = 'CHECKING' | 'PROVISIONING' | 'READY' | 'FAILED';
+type Status =
+  | 'CHECKING'
+  | 'PROVISIONING'
+  | 'PROJECT_CREATED'
+  | 'READY'
+  | 'FAILED';
 
 const status = ref<Status>('CHECKING');
 const errorMessage = ref('');
@@ -69,14 +74,14 @@ onMounted(() => {
   // useAuth() is reactive but not synchronously ready on first render —
   // wait for isLoaded before deciding whether to redirect (AC-1, AC-5).
   watch(
-    isLoaded,
-    (loaded) => {
+    [isLoaded, isSignedIn, orgId],
+    ([loaded, signedIn, activeOrgId]) => {
       if (!loaded) return;
-      if (!isSignedIn.value) {
+      if (!signedIn) {
         void router.replace('/sign-in');
         return;
       }
-      if (!orgId.value) {
+      if (!activeOrgId) {
         void router.replace('/create-organization');
         return;
       }
@@ -100,7 +105,7 @@ onUnmounted(() => {
     <div v-else-if="status === 'FAILED'">
       Something went wrong setting up your account. {{ errorMessage }}
     </div>
-    <div v-else-if="status === 'READY'">
+    <div v-else-if="status === 'PROJECT_CREATED' || status === 'READY'">
       <!-- Empty shell — feature 0002 fills this in with real accounting data. -->
       <h1>Welcome to RareBooks</h1>
     </div>

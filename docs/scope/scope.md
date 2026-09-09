@@ -44,13 +44,13 @@ Restock notifications (with item image support) and payment method notifications
 
 ## Phase 4: Web Migration
 
-Move from a single machine Electron app to a multi tenant web architecture: Cloudflare Workers, Neon, Clerk, Hono backend. Nothing in this phase exists in the codebase yet. Sequenced so the platform foundation lands before any payment integration, since payments need somewhere to record subscription status against.
+Move from a single machine Electron app to a multi tenant web architecture: Cloudflare Workers, Neon, Clerk, Hono backend. The platform foundation and provisioning code now exist; the tenant data layer, billing, notifications, and production cutover remain to be implemented. The work is sequenced so the platform foundation lands before any payment integration, since payments need somewhere to record subscription status against.
 
 ### 06. Web platform foundation & control plane · in-progress
 Stand up the Hono API, Clerk auth, and the control plane Neon project. No accounting features yet, just: can a user sign in, create an organization, get a tenant project provisioned, and see an empty dashboard.
-**Done when:** creating an organization auto provisions a dedicated Neon tenant project, the control plane project records the org, its tenant pointer, and subscription status, and a signed in user with a `READY` tenant reaches an empty dashboard shell.
+**Done when:** creating an organization auto provisions a dedicated Neon tenant project, the control plane project records the org, its tenant pointer, and subscription status, and a signed in user with a `PROJECT_CREATED` tenant reaches an empty dashboard shell. Feature 07 later advances that tenant to `READY` after applying the accounting schema.
 - [x] Design it (spec): `/architect web platform foundation & control plane`
-- [ ] Build it: `/develop web platform foundation & control plane`
+- [x] Build it: `/develop web platform foundation & control plane`
   - [x] `worker/` scaffold: Hono app, `@clerk/hono` middleware, `wrangler.toml`
   - [x] Control plane Neon project: `organizations`, `tenant_projects`, `subscriptions`, `payments` tables — schema written (`worker/db/schema.sql`), not yet applied to a real Neon project
   - [x] `worker/routes/webhooks/organization-created.ts`: provisions a tenant Neon project on org creation, stores the encrypted connection string
@@ -66,7 +66,7 @@ All 5 milestones are code-complete and typecheck clean (verified against real, c
 
 `/check verify` (2026-09-05) confirmed, running the worker locally (`npm install`, `tsc --noEmit`, `wrangler dev --local` with placeholder secrets): typecheck is clean; the server boots and `GET /` returns `200`; `/api/me` and `/api/dashboard` correctly return `401 Unauthenticated` with no session; `POST /webhooks/clerk/organization-created` correctly returns `400 Invalid webhook signature` for an unverified payload (AC-4's rejection path). All client side surfaces from the build plan exist (`fyo/demux/{auth,config,db}.ts` use `fetch()`, no `ipcRenderer`; `src/pages/web/{SignIn,SignUp,CreateOrganization,Dashboard}.vue`; `src/web/router.ts`; `rendererWeb.ts`), and `src/` has no direct import of `worker/` (one code comment mentions the path, not an import), holding the client/server invariant.
 
-Still blocked, not yet provable from the build/verify environment used: AC-1's actual sign up/sign in (needs a live Clerk instance), AC-2's real provisioning path and AC-3's tables (needs a live Neon project; `worker/db/schema.sql` is still unapplied to any real Neon project), and AC-5's `READY` dashboard gate for a real authenticated session. Charles confirmed local `.env`/secrets are in place on his own machine, but that hasn't yet been exercised in an environment with outbound access to Cloudflare, Neon, or Clerk, so `Verify it` stays unticked below. Before `Build it`/`Verify it` can be fully closed: confirm the Neon, Clerk, and Cloudflare accounts/projects are live, apply `worker/db/schema.sql` to the real control plane project, and run `wrangler dev` (or `wrangler deploy`) end to end against them.
+Still blocked, not yet provable from the build/verify environment used: AC-1's actual sign up/sign in (needs a live Clerk instance), AC-2's real provisioning path and AC-3's tables (needs a live Neon project; `worker/db/schema.sql` is still unapplied to any real Neon project), and AC-5's `PROJECT_CREATED` dashboard gate for a real authenticated session. Charles confirmed local `.env`/secrets are in place on his own machine, but that hasn't yet been exercised in an environment with outbound access to Cloudflare, Neon, or Clerk, so `Verify it` stays unticked below. Before `Verify it` can be closed: confirm the Neon, Clerk, and Cloudflare accounts/projects are live, apply `worker/db/schema.sql` to the real control plane project, and run `wrangler dev` (or `wrangler deploy`) end to end against them.
 
 ### 07. Tenant schema & data layer · needs a decision
 Apply the accounting schema to freshly provisioned tenant projects, and route doc CRUD through the correct per tenant connection, so the same doctypes and forms Desktop already has work through the Web stack.

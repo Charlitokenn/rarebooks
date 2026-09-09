@@ -113,7 +113,7 @@
 - Updated app identity/display names and logo scaling for the Windows appx build.
 
 **Next session should:**
-- If starting sub-phase 06, provision the control-plane Neon project first (manually or via a one-time setup script) before wiring the `clerk-org-created` webhook that provisions tenant projects.
+- If starting sub-phase 06, provision the control-plane Neon project first (manually or via a one-time setup script) before wiring the `worker/routes/webhooks/organization-created.ts` webhook that provisions tenant projects.
 - Re-check PayPal's current `Create Subscription` request schema before implementing sub-phase 09 — this session's crosscheck found two deprecated fields on that exact shape, which signals the API surface moves; don't build from the snippet in `library-docs.md` without a fresh check.
 - Decide the actual seat counts per subscription tier before sub-phase 08, and confirm whether any tier needs Clerk's paid B2B Authentication add-on (required above 20 seats per org).
 - General rule going forward: this session's docs crosscheck has a shelf life like any other vendor research — re-verify Neon, Clerk, PayPal, and OneSignal specifics again before actually implementing each, don't treat this pass as permanently current.

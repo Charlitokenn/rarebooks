@@ -32,7 +32,7 @@ export interface TenantProjectRow {
   connection_string: string; // still encrypted here — decrypt only in resolve-tenant.ts, in memory, per request
   region: string;
   provisioning_claim_id: string | null;
-  status: 'PROVISIONING' | 'READY' | 'SUSPENDED' | 'FAILED';
+  status: 'PROVISIONING' | 'PROJECT_CREATED' | 'READY' | 'SUSPENDED' | 'FAILED';
   created_at: string;
 }
 
@@ -63,6 +63,7 @@ export async function insertTenantProject(
       neon_project_id = ${row.neonProjectId},
       connection_string = ${row.encryptedConnectionString},
       region = ${row.region},
+      status = 'PROJECT_CREATED',
       provisioning_claim_id = NULL
     WHERE org_id = ${row.orgId}
       AND status = 'PROVISIONING'

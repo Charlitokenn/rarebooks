@@ -89,7 +89,7 @@ _Note: Neon's product is now positioned as "Lakebase Postgres, from Databricks" 
 ### Usage Pattern 1 — Provisioning a tenant project on org creation
 
 ```typescript
-// worker/routes/webhooks/clerk-org-created.ts
+// worker/routes/webhooks/organization-created.ts
 import { createNeonClient } from '@neon/sdk';
 
 const neon = createNeonClient({
@@ -107,7 +107,8 @@ const { project, connectionString } = data;
 
 // Encrypt connectionString (AES-256-GCM, same pattern as Desktop's Keymint cache)
 // and store it, alongside project.id, in the control-plane project's `tenant_projects` table.
-// Then run the accounting schema migration against the fresh project before marking it READY.
+// Record the fresh project as PROJECT_CREATED; feature 07 applies the accounting
+// schema migration before advancing it to READY for tenant data access.
 ```
 
 `createAndConnect()` polls provisioning operations to completion automatically for this specific call (the client-wide `waitForReadiness` default is `false`, but `projects.create`/`createAndConnect` and `branches.create`/`createAndConnect` turn it on for themselves) — it only resolves once the project can actually accept connections, so don't add a manual polling loop around it.

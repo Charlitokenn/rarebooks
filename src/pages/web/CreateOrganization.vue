@@ -3,7 +3,7 @@
   organization.created webhook (worker/routes/webhooks/organization-created.ts),
   which provisions the tenant Neon project. That provisioning is async, so
   this always routes to /dashboard next — Dashboard.vue itself polls until
-  the tenant project is READY (AC-5), it doesn't assume it's ready already.
+  the tenant project is PROJECT_CREATED (AC-5), it doesn't assume it's ready already.
 
   Mounts clerk.mountCreateOrganization() directly (bundled @clerk/clerk-js,
   see src/web/clerk.ts) rather than @clerk/vue's <CreateOrganization />

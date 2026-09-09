@@ -22,7 +22,7 @@ Read the context files in this exact order before writing any code:
 
 ## Overview
 
-Simple bookkeeping app for small and medium businesses, forked from Frappe Books. Ships today as an Electron desktop app (Vue 3 + TypeScript + SQLite); a migration to a hosted web app (Cloudflare Workers, Hono, Clerk, Neon, per silo tenant databases) is planned but not yet present in this branch's code.
+Simple bookkeeping app for small and medium businesses, forked from Frappe Books. Ships today as an Electron desktop app (Vue 3 + TypeScript + SQLite). This branch also contains the hosted web foundation: the Vue web client, Cloudflare Worker and Hono API, Clerk authentication, Neon control-plane integration, and per-organization tenant provisioning. The accounting-schema migration, tenant CRUD layer, subscription and payment flows, notifications, and production cutover remain planned.
 
 ## Stack
 
@@ -59,7 +59,7 @@ yarn format
 
 ## Specs
 
-`docs/specs/`: 0001 web platform foundation & control plane (in progress) · 0002 tenant schema & data layer · 0003 subscription gating & seat sync · 0004 PayPal subscriptions · 0005 Lipa Namba manual payments & admin review · 0006 OneSignal notifications · 0007 deploy & cutover readiness. See `docs/scope/scope.md` for the full plan (features 01-05 existing, 06-13 planned) and `context/build-plan.md` for the original, more detailed sub-phase writeups these specs were captured from.
+`docs/specs/`: 0001 web platform foundation & control plane (in progress) · 0002 tenant schema & data layer · 0003 subscription gating & seat sync · 0004 PayPal subscriptions · 0005 Lipa Namba manual payments & admin review · 0006 OneSignal notifications · 0007 deploy & cutover readiness. See `docs/scope/scope.md` for the full plan (features 01-05 existing, 06 in progress, and 07-13 planned) and `context/build-plan.md` for the original, more detailed sub-phase writeups these specs were captured from.
 
 ## Rules
 

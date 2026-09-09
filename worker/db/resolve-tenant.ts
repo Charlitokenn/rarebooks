@@ -19,7 +19,7 @@ export type TenantDb = NeonQueryFunction<false, false>;
 
 interface CacheEntry {
   db: TenantDb;
-  status: 'PROVISIONING' | 'READY' | 'SUSPENDED' | 'FAILED';
+  status: 'PROVISIONING' | 'PROJECT_CREATED' | 'READY' | 'SUSPENDED' | 'FAILED';
   expiresAt: number;
 }
 
@@ -58,9 +58,16 @@ export async function resolveTenantDb(
     throw new TenantNotReadyError(row.status);
   }
 
-  const connectionString = await decrypt(row.connection_string, env.TENANT_ENCRYPTION_KEY);
+  const connectionString = await decrypt(
+    row.connection_string,
+    env.TENANT_ENCRYPTION_KEY
+  );
   const db = neon(connectionString);
 
-  cache.set(orgId, { db, status: row.status, expiresAt: Date.now() + CACHE_TTL_MS });
+  cache.set(orgId, {
+    db,
+    status: row.status,
+    expiresAt: Date.now() + CACHE_TTL_MS,
+  });
   return db;
 }

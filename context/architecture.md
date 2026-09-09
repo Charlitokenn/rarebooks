@@ -149,7 +149,7 @@ Observers (`method:schemaName`) fire on fyo.db.observer / fyo.doc.observer
 ```
 Clerk `organization.created` webhook fires (new org signs up)
         ↓
-worker/routes/webhooks/clerk-org-created.ts
+worker/routes/webhooks/organization-created.ts
         ↓
 Neon API: POST /projects  (or @neon/sdk's createAndConnect()) — creates a new, isolated Neon project for this org
         ↓
@@ -253,7 +253,7 @@ A second, small **control-plane Neon project** (one project, shared, provisioned
 | neon_project_id         | text        | The tenant's Neon project ID                                       |
 | connection_string       | text        | **Encrypted at rest** (same AES-256-GCM pattern used for Desktop's Keymint cache — see `library-docs.md`) |
 | region                  | text        | Neon region the project was provisioned in                         |
-| status                  | text        | `PROVISIONING`, `READY`, `SUSPENDED`, `FAILED`                     |
+| status                  | text        | `PROVISIONING`, `PROJECT_CREATED`, `READY`, `SUSPENDED`, `FAILED`  |
 | created_at              | timestamptz |                                                                    |
 
 #### `subscriptions`
