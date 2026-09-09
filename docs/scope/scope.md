@@ -102,7 +102,7 @@ Port restock and payment notification triggers from ntfy (Desktop) to OneSignal 
 Operational readiness: production deploy pipeline and a final check that the invariants hold before onboarding real customers.
 **Done when:** `wrangler deploy` ships the worker with production secrets configured, no Keymint or ClickPesa code is present in the deployed bundle, and a load or smoke test confirms multi tenant query scoping holds under concurrent tenants.
 - [ ] Design it (spec): `/architect deploy & cutover readiness`
-  Depends on 09, 10, 11, and 13 (legal pages should be live before real customers are onboarded).
+  Depends on 09, 10, 11, and 13 (legal pages should be live before real customers are onboarded). See also "Note on better-sqlite3 vs. Electron 22" below — unrelated to this feature's web-deploy scope, but tracked here since Desktop packaging is the other place a deploy-readiness check would apply.
 
 ### 13. Legal & compliance pages
 Terms of Service, Privacy Policy, and basic compliance content, needed once real payments and tenant data are live. Not part of the original `context/build-plan.md` sub-phase list; added because Charles confirmed it in scope during planning.
@@ -112,6 +112,14 @@ Terms of Service, Privacy Policy, and basic compliance content, needed once real
 ## Note on file & image storage
 
 An earlier pass of this plan included a "tenant file & image storage" feature using Neon's S3 compatible object storage, per a preference Charles stated at the time. `context/architecture.md`'s Storage section says no shared storage bucket exists in either target currently, and that if one is ever needed it would likely be Cloudflare R2, not Neon storage, since Neon does not do blob storage. This is a real conflict between what was decided in this scope session and what the project's own architecture doc says. Dropped from this scope pass pending a decision; raise it with `/architect` (as its own feature) once you have picked a direction.
+
+## Note on better-sqlite3 vs. Electron 22
+
+`better-sqlite3` is pinned to `^13.0.3` (bumped during dependency work to fix an `npm install` failure on a modern host Node). That version compiles with `NAPI_VERSION=10`, which Node's own N-API version matrix confirms requires Node v22.14.0+ — Electron 22 bundles Node 16.17.1, which tops out at N-API version 8. This is a hard technical ceiling, not a soft support-policy warning: the `electron-rebuild` step targeting Electron 22 will not produce a working binary as currently pinned.
+
+Checked every `better-sqlite3` release between the original `9.2.2` and current `13.0.3`: there is no version that is simultaneously N-API-based (needed for the host install to succeed on modern Node) and capped at N-API ≤8 (needed for Electron 22). The only two real fixes are downgrading `better-sqlite3` (which reintroduces the original, confirmed-broken host install failure) or upgrading Electron itself (a large, separate migration — Electron 22 is EOL, and `npm audit` surfaces real CVEs against it independent of this issue). Neither is minimal, so neither has been applied.
+
+Dormant for now: nothing built or tested so far touches this, since the whole web migration (features 06 onward) never uses `better-sqlite3` at all — it's Desktop/Electron-only, for local SQLite storage. This will surface the moment `npm run dev` or a desktop package build is actually run. Worth resolving as part of whichever feature ends up owning the Electron version bump, or before then if Desktop development resumes first.
 
 ## Legend
 
