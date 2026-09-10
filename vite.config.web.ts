@@ -23,23 +23,16 @@ import { defineConfig } from 'vite';
  */
 export default defineConfig({
   root: __dirname,
-  server: {
-    proxy: {
-      // wrangler dev's default port. Without this, fetch('/api/...') from
-      // the browser resolves against Vite's own dev server (5173), which
-      // has no such route — and since Vite's default appType is 'spa', it
-      // silently falls back to serving index.html (200 OK) instead of a
-      // real 404. That HTML then fails to parse as JSON in Dashboard.vue's
-      // fetch, gets swallowed by its .catch(() => ({})), and the resulting
-      // empty body renders as a blank page instead of a real status.
-      '/api': 'http://localhost:8787',
-      '/webhooks': 'http://localhost:8787',
-    },
-  },
   build: {
     outDir: path.resolve(__dirname, './dist_web'),
     rollupOptions: {
       input: path.resolve(__dirname, './index.html'),
+    },
+  },
+  server: {
+    proxy: {
+      '/api': 'http://localhost:8787',
+      '/webhooks': 'http://localhost:8787',
     },
   },
   plugins: [vue()],

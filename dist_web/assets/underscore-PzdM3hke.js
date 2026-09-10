@@ -1,0 +1,1 @@
+function t(e){const a=e||"";return a.charAt(0).toUpperCase()+a.slice(1)}function n(e){return e?e.replace(/([-_][a-z])/g,a=>a.toUpperCase().replace(/-|_/,"")):""}function r(e){return e?e.replace(/[A-Z]/g,a=>`_${a.toLowerCase()}`):""}export{r as c,n as s,t};

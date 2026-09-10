@@ -65,7 +65,7 @@ Reusing the existing schema and business logic unmodified is the entire point of
 
 ## Build plan
 
-1. Write the accounting schema migration script and wire it into `worker/routes/webhooks/organization-created.ts` as the final provisioning step, advancing `PROJECT_CREATED` to `READY` only on success. Satisfies **AC-1**.
+1. Write the accounting schema migration script and wire it into `../../worker/routes/webhooks/organization-created.ts` as the final provisioning step, advancing `PROJECT_CREATED` to `READY` only on success. Satisfies **AC-1**.
 2. Build generic `worker/routes/` doc CRUD handlers mirroring Desktop's IPC actions, each behind the feature 06 tenant resolution middleware. Satisfies **AC-2, AC-3**.
 3. Run `models/**`/`reports/**` against a real tenant Neon project and fix any Postgres versus SQLite query differences found. Satisfies **AC-4**.
 4. Build a migration runner utility that iterates `tenant_projects` for future schema rollouts. Satisfies **AC-5**.

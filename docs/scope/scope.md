@@ -53,7 +53,7 @@ Stand up the Hono API, Clerk auth, and the control plane Neon project. No accoun
 - [x] Build it: `/develop web platform foundation & control plane`
   - [x] `worker/` scaffold: Hono app, `@clerk/hono` middleware, `wrangler.toml`
   - [x] Control plane Neon project: `organizations`, `tenant_projects`, `subscriptions`, `payments` tables — schema written (`worker/db/schema.sql`), not yet applied to a real Neon project
-  - [x] `worker/routes/webhooks/organization-created.ts`: provisions a tenant Neon project on org creation, stores the encrypted connection string
+  - [x] `../../worker/routes/webhooks/organization-created.ts`: provisions a tenant Neon project on org creation, stores the encrypted connection string
   - [x] `worker/db/control.ts` and `worker/db/resolve-tenant.ts`
   - [x] `fyo/demux/*.ts` web implementation + `rendererWeb.ts` entry point, plus the sign-in/sign-up/org-creation/dashboard UI (`src/pages/web/`, `src/web/router.ts`)
 - [ ] Verify it: `/check verify web platform foundation & control plane`
@@ -62,7 +62,7 @@ Stand up the Hono API, Clerk auth, and the control plane Neon project. No accoun
 - [ ] Document it: `/document web platform foundation & control plane`
   Spec 0001. code in `worker/`, `custom/web/auth/`, `fyo/demux/`, `src/pages/web/`, `src/web/`, `rendererWeb.ts`
 
-All 5 milestones are code-complete and typecheck clean (verified against real, currently-published package versions and types — `@neon/sdk`, `@clerk/vue` — not assumed from memory; two real bugs were caught and fixed this way: svix's `verify()` doesn't parse the payload, and `@neon/sdk`'s `orgId` is client-level config, not a per-call field). A later commit swapped `@hono/clerk-auth` (deprecated) for `@clerk/hono`, and the hand rolled `svix` webhook verification for `@clerk/hono/webhooks`' `verifyWebhook`, which also fixed the payload parsing bug above; `worker/routes/webhooks/organization-created.ts` documents the swap.
+All 5 milestones are code-complete and typecheck clean (verified against real, currently-published package versions and types — `@neon/sdk`, `@clerk/vue` — not assumed from memory; two real bugs were caught and fixed this way: svix's `verify()` doesn't parse the payload, and `@neon/sdk`'s `orgId` is client-level config, not a per-call field). A later commit swapped `@hono/clerk-auth` (deprecated) for `@clerk/hono`, and the hand rolled `svix` webhook verification for `@clerk/hono/webhooks`' `verifyWebhook`, which also fixed the payload parsing bug above; `../../worker/routes/webhooks/organization-created.ts` documents the swap.
 
 `/check verify` (2026-09-05) confirmed, running the worker locally (`npm install`, `tsc --noEmit`, `wrangler dev --local` with placeholder secrets): typecheck is clean; the server boots and `GET /` returns `200`; `/api/me` and `/api/dashboard` correctly return `401 Unauthenticated` with no session; `POST /webhooks/clerk/organization-created` correctly returns `400 Invalid webhook signature` for an unverified payload (AC-4's rejection path). All client side surfaces from the build plan exist (`fyo/demux/{auth,config,db}.ts` use `fetch()`, no `ipcRenderer`; `src/pages/web/{SignIn,SignUp,CreateOrganization,Dashboard}.vue`; `src/web/router.ts`; `rendererWeb.ts`), and `src/` has no direct import of `worker/` (one code comment mentions the path, not an import), holding the client/server invariant.
 

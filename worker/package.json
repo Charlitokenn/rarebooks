@@ -5,6 +5,7 @@
   "description": "RareBooks web platform API (Cloudflare Workers, Hono) — Web only, kept as its own package since the Workers runtime and its dependency set are unrelated to the Electron app's.",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/ensure-dist-web.mjs",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "deploy:staging": "wrangler deploy --env staging",

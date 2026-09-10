@@ -17,10 +17,10 @@ const app = new Hono<{ Bindings: WorkerEnv }>();
 // need it enforce it themselves via requireOrgSession (worker/middleware/clerk-auth.ts).
 app.use('*', clerkMiddleware());
 
-app.get('/', (c) => c.json({ ok: true, service: 'rarebooks-web' }));
+app.get('/api/health', (c) => c.json({ ok: true, service: 'rarebooks-web' }));
 
 app.route('/api/me', meRoute);
 app.route('/api/dashboard', dashboardRoute);
-app.route('/webhooks/clerk/organization-created', organizationCreatedRoute);
+app.route('/webhooks/organization-created', organizationCreatedRoute);
 
 export default app;

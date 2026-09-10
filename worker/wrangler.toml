@@ -3,6 +3,21 @@ main = "index.ts"
 compatibility_date = "2026-09-03"
 compatibility_flags = ["nodejs_compat"]
 
+workers_dev = true #Setting it to false explicitly acknowledges that you only want custom domain routing.
+preview_urls = false
+
+[assets]
+directory = "../dist_web"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[[routes]]
+pattern = "app.rarebooks.cc"
+zone_name = "rarebooks.cc"
+custom_domain = true
+enabled = true
+previews_enabled = false
+
 # Secrets (set with `wrangler secret put <NAME>`, never committed here):
 #   CLERK_SECRET_KEY
 #   CLERK_PUBLISHABLE_KEY

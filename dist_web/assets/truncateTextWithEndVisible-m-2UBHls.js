@@ -1,0 +1,1 @@
+function r(n,t=20,i=5){if(!n)return n;const o=Array.from(n);if(o.length<=t)return n;if(t<=i+3)return"..."+o.slice(-i).join("");const L=t-i-3,c=o.slice(0,L).join(""),I=o.slice(-i).join("");return c+"..."+I}export{r as t};
