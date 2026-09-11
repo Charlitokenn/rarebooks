@@ -32,7 +32,7 @@ require('source-map-support').install({
 // Must use require here as it runs before imports
 // require('dotenv').config();
 
-import { emitMainProcessError } from 'backend/helpers';
+import { emitMainProcessError } from './backend/helpers';
 import {
   app,
   BrowserWindow,

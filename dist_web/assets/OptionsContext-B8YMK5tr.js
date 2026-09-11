@@ -1,0 +1,1 @@
+import{R as o,j as s}from"./index--zwhJJ6x.js";const n=o.createContext({});function i({children:t,value:e}){return s(n.Provider,{value:e,children:t})}function u(){const t=o.useContext(n);if(t===void 0)throw new Error("useOptions must be used within an OptionsContext");return t}export{n as O,i as a,u};

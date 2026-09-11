@@ -1,0 +1,1 @@
+import{r as t}from"./index--zwhJJ6x.js";const r=t.createContext(null),c=()=>{const e=t.useContext(r);if(!e||e.componentName!=="UserVerification")throw new Error("Clerk: useUserVerificationContext called outside of the mounted UserVerification component.");const{componentName:o,...n}=e;return{...n,componentName:o}};export{r as U,c as u};

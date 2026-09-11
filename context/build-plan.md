@@ -118,13 +118,13 @@ Stand up the Hono API, Clerk auth, and the control-plane Neon project — no acc
 
 - Sign-in / sign-up pages (Clerk components)
 - Organization creation flow
-- Empty dashboard shell reachable only when authenticated with an active org whose tenant project is `READY`
+- Empty dashboard shell reachable when authenticated with an active org whose tenant project is `PROJECT_CREATED` (or later `READY`)
 
 **Logic:**
 
 - `worker/` scaffold: Hono app, `@hono/clerk-auth` middleware, `wrangler.toml`
 - Control-plane Neon project provisioned (once, manually or via a setup script): `organizations`, `tenant_projects`, `subscriptions`, `payments` tables
-- `worker/routes/webhooks/clerk-org-created.ts`: on org creation, call the Neon API (`@neon/sdk`'s `createAndConnect()`) to provision a new, isolated tenant project; encrypt and store its connection string in `tenant_projects`
+- `../worker/routes/webhooks/organization-created.ts`: on org creation, call the Neon API (`@neon/sdk`'s `createAndConnect()`) to provision a new, isolated tenant project; encrypt and store its connection string in `tenant_projects` with status `PROJECT_CREATED`
 - `worker/db/control.ts`: fixed connection to the control-plane project
 - `worker/db/resolve-tenant.ts`: per-request lookup + decrypt + short-TTL cache of a tenant's connection, given the signed-in user's Clerk `org_id`
 - `fyo/demux/*.ts` web implementation (replacing `ipcRenderer` calls with `fetch()` against `worker/`)
@@ -144,7 +144,7 @@ Apply the accounting schema to freshly-provisioned tenant projects, and route do
 
 **Logic:**
 
-- Accounting schema migration script, run against each newly-provisioned tenant project as the last step of `clerk-org-created.ts` (mark `tenant_projects.status = 'READY'` only once it succeeds)
+- Accounting schema migration script, run against each newly-provisioned tenant project as the last step of `../worker/routes/webhooks/organization-created.ts` (advance `tenant_projects.status` from `PROJECT_CREATED` to `READY` only once it succeeds)
 - `worker/routes/`: generic doc CRUD routes mirroring `main/registerIpcMainActionListeners.ts`'s IPC actions, each running after `resolve-tenant.ts` middleware — **no `org_id` column or filter anywhere in tenant-project tables**, the resolved connection is the only tenant boundary
 - Verify `models/**`/`reports/**` run correctly against `fyo.db` backed by a tenant's Neon project, not just SQLite (may surface Postgres-vs-SQLite query differences to fix)
 - A migration runner utility for rolling out future schema changes across every row in `tenant_projects`, not just one project
