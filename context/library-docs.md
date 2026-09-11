@@ -6,7 +6,9 @@ Project-specific usage patterns for every third party library in this project. T
 
 Read the relevant section before implementing any feature that touches these libraries. Sections are marked **Desktop only**, **Web only**, or **Shared**.
 
-_Verified against current docs: 2026-09-02._
+_Verified against current docs: 2026-09-02, rechecked 2026-09-06 (via Context7 + npm)._
+
+_2026-09-06 recheck found this file's own Hono/Clerk sections had gone stale — they still showed the pre-migration `@hono/clerk-auth` + hand-rolled `svix` pattern after the actual code had already moved to `@clerk/hono` (see `worker/routes/webhooks/organization-created.ts`'s own note on the swap, and `docs/specs/0001-web-platform-foundation-control-plane.md`, which already had it right). Fixed below. Everything else checked in this pass — `@neon/sdk`'s error envelope/pagination/retry model, PayPal's `applicationContext`/`autoRenewal` deprecation, OneSignal's `include_aliases`/`Key ` auth prefix — matched what's written here._
 
 ---
 
@@ -198,7 +200,7 @@ The Web target's backend API, replacing Electron's IPC layer.
 ```typescript
 // worker/index.ts
 import { Hono } from 'hono';
-import { clerkMiddleware, getAuth } from '@hono/clerk-auth';
+import { clerkMiddleware, getAuth } from '@clerk/hono';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -218,7 +220,7 @@ export default app;
 
 **Rules:**
 
-- Use the official `@hono/clerk-auth` middleware for session verification — do not hand-roll JWT/JWKS verification.
+- Use the official `@clerk/hono` middleware for session verification — do not hand-roll JWT/JWKS verification. **Correction (2026-09-06 crosscheck, via Context7 + npm):** the actual worker code migrated from `@hono/clerk-auth` (the community package in the `honojs/middleware` monorepo — still on npm, still works, but not Clerk's first-party SDK) to `@clerk/hono` (Clerk's own official Hono package, in the `clerk/javascript` monorepo alongside `@clerk/nextjs`/`@clerk/express`/etc., actively published). This file's example still showed the old package; updated to match what's actually shipped — see `worker/middleware/clerk-auth.ts` and the note in `worker/routes/webhooks/organization-created.ts`.
 - Every route handler that touches tenant data must run after the org-resolution + subscription-status middleware; never bypass it for a "quick" route.
 - Keep route handlers thin — delegate to `models/`/`fyo` for business logic, matching how `main/registerIpcMainActionListeners.ts` stays thin on Desktop.
 - Return `{ success: boolean, data?, error? }` shaped JSON, consistent with the project's API convention in `code-standards.md`.
@@ -232,7 +234,7 @@ Handles user authentication and multi-tenant organization management for the Web
 ### Usage Pattern — Session + org resolution in Hono
 
 ```typescript
-import { getAuth } from '@hono/clerk-auth';
+import { getAuth } from '@clerk/hono';
 
 app.get('/api/me', (c) => {
   const auth = getAuth(c);
@@ -242,7 +244,8 @@ app.get('/api/me', (c) => {
 
 **Rules:**
 
-- `@hono/clerk-auth` works natively on Cloudflare Workers (built on `@clerk/backend`, designed for V8 isolates) — no Node-only Clerk SDK. This specific package isn't covered in detail by Clerk's or Hono's primary docs indexes (verify its current README directly before implementation — it's a real, actively-maintained community/official-adjacent package, but treat its exact API as needing a fresh check, not this file, at build time).
+- `@clerk/hono` works natively on Cloudflare Workers (built on `@clerk/backend`, designed for V8 isolates) — no Node-only Clerk SDK. Confirmed via npm (published, actively maintained, part of the official `clerk/javascript` monorepo — not a community package) — its own README documents exactly this `clerkMiddleware`/`getAuth` shape, plus a `/webhooks` subpath (see Webhook verification below). Still worth a fresh check at build time since it's a young, fast-moving package (early 0.1.x line).
+- Security: a real CVE (CVE-2026-34076) affects `@clerk/hono` `>= 0.1.0, < 0.1.5` (also hit `@clerk/express`, `@clerk/backend`, `@clerk/fastify` in their own affected ranges) — confirm the installed version is `>= 0.1.5` before relying on it. `worker/package.json` currently pins `^0.1.76`, which is unaffected.
 - The active organization (`auth.orgId`) is the tenant boundary for every Neon query — see Neon section above.
 - Config: `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY` env vars (Worker secrets, never committed).
 - The Web "super admin" role (for reviewing Lipa Namba payment claims) is a RareBooks-level authorization check on top of Clerk, not a Clerk built-in role — implement it as an explicit allow-list or a custom Clerk metadata flag checked in `worker/middleware/`.
@@ -270,26 +273,26 @@ Clerk itself then blocks new invitations once an org hits its cap — the check 
 
 ### Usage Pattern — Webhook verification (org creation, membership events)
 
-Clerk webhooks are delivered via Svix. There's a Next.js-specific helper (`verifyWebhook` from `@clerk/nextjs/webhooks`) — **not applicable here**, since the Web target runs on Hono/Cloudflare Workers, not Next.js. Verify manually using the `svix` package (Workers-compatible) against the raw request body and the endpoint's signing secret from the Clerk Dashboard:
+Clerk webhooks are delivered via Svix (Standard Webhooks). Clerk's own `verifyWebhook` helper is no longer Next.js-only — it now ships per-framework (`@clerk/nextjs/webhooks`, `@clerk/astro/webhooks`, `@clerk/express/webhooks`, `@clerk/fastify/webhooks`) plus a framework-agnostic `@clerk/backend/webhooks`, and — confirmed via npm, 2026-09-06 — `@clerk/hono` ships its own `@clerk/hono/webhooks` too, which takes the Hono context directly instead of a raw `Request`:
 
 ```typescript
-import { Webhook } from 'svix';
+import { verifyWebhook } from '@clerk/hono/webhooks';
 
-const wh = new Webhook(env.CLERK_WEBHOOK_SIGNING_SECRET);
-const evt = wh.verify(rawBody, {
-  'svix-id': c.req.header('svix-id')!,
-  'svix-timestamp': c.req.header('svix-timestamp')!,
-  'svix-signature': c.req.header('svix-signature')!,
+organizationCreatedRoute.post('/', async (c) => {
+  const evt = await verifyWebhook(c, { signingSecret: c.env.CLERK_WEBHOOK_SIGNING_SECRET });
+  // evt.type === 'organization.created' → provision a tenant Neon project (see Neon section)
 });
-// evt.type === 'organization.created' → provision a tenant Neon project (see Neon section)
 ```
+
+**Correction from an earlier draft of this plan:** that earlier draft called for hand-rolling verification with the `svix` package directly (shown further down in this file's history) — `@clerk/hono/webhooks`' `verifyWebhook` does the same Svix verification plus parses the payload in one call, and is what's actually shipped in `worker/routes/webhooks/organization-created.ts`. Don't reintroduce a manual `svix` integration; it was already tried once and swapped out. Note `verifyWebhook` reads the request body itself (`c.req.text()` internally) — don't consume the body via `c.req.text()`/`c.req.json()` before calling it, since a request body can only be read once.
 
 Relevant event types, confirmed current: `organization.created`, `organization.updated`, `organization.deleted`, `organization_membership.created/updated/deleted`, `organization_invitation.created/accepted/revoked`.
 
 **Rules:**
 
-- Never process a Clerk webhook payload before `wh.verify()` succeeds — same rule as PayPal's webhook signature verification below.
-- `CLERK_WEBHOOK_SIGNING_SECRET` is a separate secret from `CLERK_SECRET_KEY` — found per-endpoint in the Clerk Dashboard, not the same value.
+- Never process a Clerk webhook payload before `verifyWebhook()` succeeds — same rule as PayPal's webhook signature verification below.
+- `CLERK_WEBHOOK_SIGNING_SECRET` is a separate secret from `CLERK_SECRET_KEY` — found per-endpoint in the Clerk Dashboard, not the same value. Pass it explicitly as `signingSecret` in Workers — there's no `process.env` fallback to rely on there, unlike Node-based frameworks.
+- Separately, and unrelated to which package does the verifying: `@clerk/backend`'s `verifyWebhook` had a real signature-verification bypass, CVE-2025-53548, patched at `@clerk/backend@2.4.0`. `worker/package.json` pins `@clerk/backend@^3.17.1`, well past the fix — confirm this stays true if the pin ever changes.
 
 ---
 

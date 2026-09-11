@@ -110,5 +110,5 @@ Each tenant project gets the standard accounting schema (Party, SalesInvoice, Pu
 
 ## Follow-up
 
-- [ ] Confirm the exact Postgres/Neon client package for the Workers runtime (e.g. `@neondatabase/serverless`) before feature 07 starts; do not assume a generic `pg` driver works unmodified in a Workers isolate.
+- [x] Confirm the exact Postgres/Neon client package for the Workers runtime (e.g. `@neondatabase/serverless`) before feature 07 starts; do not assume a generic `pg` driver works unmodified in a Workers isolate. Resolved in `0002-tenant-schema-data-layer.md`: `@neondatabase/serverless`'s `Pool`/`Client` (its node-postgres compatible, WebSocket based driver, distinct from the tagged-template `neon()` function this feature uses for the control plane) is what feature 07's `DatabaseCore`/Knex layer runs on.
 - [ ] Decide whether project per tenant remains the model at scale, or whether to move to Neon's branch per tenant pattern, once real tenant counts make it relevant.

@@ -17,7 +17,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 04 | Expense tracking, full feature | Phase 3: Accounting Extensions | existing |
 | 05 | Inventory & payment notifications | Phase 3: Accounting Extensions | existing |
 | 06 | Web platform foundation & control plane | Phase 4: Web Migration | in-progress |
-| 07 | Tenant schema & data layer | Phase 4: Web Migration | planned |
+| 07 | Tenant schema & data layer | Phase 4: Web Migration | in-progress |
 | 08 | Subscription gating & seat sync | Phase 4: Web Migration | planned |
 | 09 | PayPal subscriptions (non Tanzania payments) | Phase 4: Web Migration | planned |
 | 10 | Lipa Namba manual payments (Tanzania payments) & admin review | Phase 4: Web Migration | planned |
@@ -68,11 +68,23 @@ All 5 milestones are code-complete and typecheck clean (verified against real, c
 
 Still blocked, not yet provable from the build/verify environment used: AC-1's actual sign up/sign in (needs a live Clerk instance), AC-2's real provisioning path and AC-3's tables (needs a live Neon project; `worker/db/schema.sql` is still unapplied to any real Neon project), and AC-5's `PROJECT_CREATED` dashboard gate for a real authenticated session. Charles confirmed local `.env`/secrets are in place on his own machine, but that hasn't yet been exercised in an environment with outbound access to Cloudflare, Neon, or Clerk, so `Verify it` stays unticked below. Before `Verify it` can be closed: confirm the Neon, Clerk, and Cloudflare accounts/projects are live, apply `worker/db/schema.sql` to the real control plane project, and run `wrangler dev` (or `wrangler deploy`) end to end against them.
 
-### 07. Tenant schema & data layer · needs a decision
+### 07. Tenant schema & data layer · in-progress
 Apply the accounting schema to freshly provisioned tenant projects, and route doc CRUD through the correct per tenant connection, so the same doctypes and forms Desktop already has work through the Web stack.
 **Done when:** a newly provisioned tenant project has the full accounting schema applied and marked `READY`, and generic doc CRUD routes read and write against the signed in org's own tenant project with no `org_id` column anywhere.
-- [ ] Design it (spec): `/architect tenant schema & data layer`
+- [x] Design it (spec): `/architect tenant schema & data layer`
+- [ ] Build it: `/develop tenant schema & data layer`
+  - [ ] `../../backend/database/core.ts`'s `DatabaseCore`: Postgres flavored client config + type map, on `@neondatabase/serverless`'s `Pool` via the `pg` package alias; fix `connect()`'s SQLite-only `PRAGMA foreign_keys=ON` and whatever else `migrate()`'s path turns up
+  - [ ] Wire `DatabaseCore.migrate()` into `../../worker/routes/webhooks/organization-created.ts` as the final provisioning step, `PROJECT_CREATED` → `READY`
+  - [ ] Generic doc CRUD routes in `worker/routes/`, behind feature 06's tenant resolution middleware
+  - [ ] Migration runner utility over every `tenant_projects` row
   Depends on 06.
+- [ ] Verify it: `/check verify tenant schema & data layer`
+- [ ] Test it: `/test tenant schema & data layer`
+- [ ] Review it: `/check review tenant schema & data layer`
+- [ ] Document it: `/document tenant schema & data layer`
+  Spec 0002. code in `../../backend/database/core.ts`, `worker/routes/`, `../../worker/routes/webhooks/organization-created.ts`
+
+Spec updated 2026-09-06, cross-checked against the actual `backend/database/core.ts` (not assumed from memory or from feature 06's shape): `DatabaseCore` is Knex, hardwired to `better-sqlite3`; the accounting schema is applied by its own existing `migrate()` (schema-driven, from the same doctype definitions Desktop uses), not a hand-written SQL file the way feature 06's tiny control-plane schema is — the original draft's "write a migration script" assumed the feature-06 shape and was wrong. Also resolved spec 0001's open Follow-up item on the Workers-compatible Postgres driver: `@neondatabase/serverless`'s `Pool`/`Client` (node-postgres compatible, via the `"pg": "npm:@neondatabase/serverless"` package alias), confirmed via Context7 + npm, not the plain `neon()` tagged-template function feature 06 uses. A same-model cross-check pass (no subagent tool available in this session to get a genuinely independent model; noting the gap rather than skipping the check) is what caught the migration-script assumption — worth another look from whoever runs `/develop` on this, given the gap in how it was caught here.
 
 ### 08. Subscription gating & seat sync · needs a decision
 Implement access control, the thing that replaces Keymint on Web: subscription status gating plus Clerk's native per org seat cap.
