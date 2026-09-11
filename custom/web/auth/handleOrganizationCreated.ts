@@ -20,8 +20,10 @@ import {
   getControlDb,
   insertOrganization,
   insertTenantProject,
+  setTenantProjectStatus,
 } from '../../../worker/db/control';
 import { encrypt } from '../../../worker/lib/encryption';
+import { applyTenantSchema } from './applyTenantSchema';
 
 // Deliberately NOT importing @clerk/backend's OrganizationJSON here: this
 // file lives under custom/ (the root package's tree), not worker/, and
@@ -96,9 +98,23 @@ export async function handleOrganizationCreated(
       throw new Error('Tenant provisioning claim was lost before completion');
     }
 
-    // The control-plane write moves the project to PROJECT_CREATED, which is
-    // enough for feature 0001's empty dashboard. Feature 0002 applies the
-    // accounting schema and advances it to READY for tenant data access.
+    // 4. Apply the accounting schema and advance to READY. The claim is
+    //    already released at this point (insertTenantProject cleared it on
+    //    success), so a failure here can't use failTenantProjectClaim's
+    //    claim compare-and-swap — it would never match and the tenant
+    //    would be stuck at PROJECT_CREATED with no failure recorded.
+    //    setTenantProjectStatus is the plain, unconditional flip instead.
+    try {
+      await applyTenantSchema(provisioned.connectionString);
+      await setTenantProjectStatus(controlDb, orgId, 'READY');
+    } catch (migrateErr) {
+      await setTenantProjectStatus(controlDb, orgId, 'FAILED');
+      // Re-thrown below reaches the outer catch's failTenantProjectClaim
+      // too; that's a harmless no-op by then (status is no longer
+      // PROVISIONING), and lets the route's existing FAILED-status check
+      // decide the HTTP response the same way for either failure point.
+      throw migrateErr;
+    }
   } catch (err) {
     await failTenantProjectClaim(controlDb, { orgId, claimId });
     throw err;

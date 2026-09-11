@@ -9,10 +9,10 @@
   "scripts": {
     "dev": "node build/scripts/dev.mjs",
     "dev:web": "vite --config vite.config.web.ts",
-    "dev:web:full": "concurrently \"npm run dev:web\" \"npm --prefix worker run dev\"",
+    "dev:web:full": "concurrently \"npm run dev:web\" \"npm --prefix ../../../Downloads/feature-07-partial/worker run dev\"",
     "build": "node build/scripts/build.mjs",
     "build:web": "vite build --config vite.config.web.ts",
-    "deploy:web": "npm run build:web && npm --prefix worker run deploy",
+    "deploy:web": "npm run build:web && npm --prefix ../../../Downloads/feature-07-partial/worker run deploy",
     "build:msix": "electron-builder --win msix --x64",
     "release": "scripts/publish-mac-arm.sh",
     "postinstall": "electron-rebuild",
@@ -42,6 +42,7 @@
     "node-fetch": "2",
     "node-machine-id": "^1.1.12",
     "pesa": "^1.1.12",
+    "pg": "npm:@neondatabase/serverless@^1.1.0",
     "source-map-support": "^0.5.21",
     "vue": "^3.2.40",
     "vue-router": "^4.0.12"
