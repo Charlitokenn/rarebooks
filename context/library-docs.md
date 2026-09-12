@@ -470,9 +470,9 @@ Builds installers for Windows (incl. MSIX), macOS, and Linux. Not used by the We
 ### Usage Pattern (Desktop)
 
 ```bash
-yarn build            # current platform
-yarn build --linux
-yarn build:msix
+npm run build               # current platform
+npm run build -- --linux
+npm run build:msix
 ```
 
 ---

@@ -30,7 +30,7 @@ Simple bookkeeping app for small and medium businesses, forked from Frappe Books
 - **Framework**: Electron (main + renderer process), Vue Router 4
 - **Database**: SQLite via better-sqlite3, Knex query builder
 - **Key dependencies**: Vue 3, Knex, Luxon (dates), Bree (job scheduling), Tailwind CSS
-- **Package manager**: npm (`package-lock.json` is authoritative since the web migration; `yarn.lock` was removed. The `yarn` commands below still run the same npm scripts under yarn 1 if you have it installed.)
+- **Package manager**: npm (`package-lock.json` is authoritative since the web migration; `yarn.lock` was removed. Yarn Classic is optional and can run the same package scripts if you already have it installed.)
 
 ## Build approach
 
@@ -40,31 +40,33 @@ Tracer Bullet (each feature built as a thin, complete vertical slice through eve
 
 ```bash
 # Install
-yarn
-yarn postinstall   # rebuilds native modules (better-sqlite3) for Electron
+npm install
+npm run postinstall   # rebuilds native modules (better-sqlite3) for Electron
 
 # Dev server
-yarn dev
+npm run dev
 
 # Build
-yarn build
-yarn build --linux | --windows | --mac
+npm run build
+npm run build -- --linux
+npm run build -- --windows
+npm run build -- --mac
 
 # Web (this branch)
-yarn dev:web          # Vite dev server (proxies /api and /webhooks to the worker)
-yarn dev:web:full     # Vite + `wrangler dev` together
-yarn build:web        # Vite production build into dist_web/
-yarn deploy:web       # build:web + wrangler deploy
+npm run dev:web          # Vite dev server (proxies /api and /webhooks to the worker)
+npm run dev:web:full     # Vite + `wrangler dev` together
+npm run build:web        # Vite production build into dist_web/
+npm run deploy:web       # build:web + wrangler deploy
 
 # Tenant schema rollout (spec 0002 AC-5, one-off operator script)
-yarn migrate:tenants -- --dry-run   # list tenants a schema change would migrate
-yarn migrate:tenants --             # fan out DatabaseCore.migrate() to every READY tenant
+npm run migrate:tenants -- --dry-run   # list tenants a schema change would migrate
+npm run migrate:tenants --             # fan out DatabaseCore.migrate() to every READY tenant
 
 # Test
-yarn test           # mocha + tape, server-side
-yarn uitest          # UI tests
-yarn lint
-yarn format
+npm run test           # mocha + tape, server-side
+npm run uitest          # UI tests
+npm run lint
+npm run format
 ```
 
 ## Specs

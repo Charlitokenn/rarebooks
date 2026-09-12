@@ -96,7 +96,7 @@ brew install --cask frappe-books
 To get the dev environment up and running you need to first set up Node.js `v20.18.1` and npm. For this, we suggest using
 [nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
 
-Next, you will need to install [yarn](https://classic.yarnpkg.com/lang/en/docs/install/#mac-stable).
+[Yarn Classic](https://classic.yarnpkg.com/lang/en/docs/install/#mac-stable) is optional; the commands below use npm, whose lockfile is authoritative.
 
 ### Clone and Run
 
@@ -111,19 +111,19 @@ git clone https://github.com/frappe/books.git
 cd books
 
 # install dependencies
-yarn
+npm install
 ```
 
 To run Frappe Books in development mode (with hot reload, etc):
 
 ```bash
 # start the electron app
-yarn dev
+npm run dev
 ```
 
 **Note: First Boot**
 
-When you run `yarn dev` electron will run immediately but the UI will take a
+When you run `npm run dev` electron will run immediately but the UI will take a
 couple of seconds to render this because of how dev mode works. Each file is
 individually served by the dev server. And there are many files that have to be
 sent.
@@ -142,7 +142,7 @@ To build Frappe Books and create an installer:
 
 ```bash
 # start the electron app
-yarn build
+npm run build
 ```
 
 **Note: Build Target**
@@ -151,7 +151,7 @@ architecture. To build for other environments (example: for linux from a windows
 computer) check the _Building_ section at
 [electron.build/cli](https://www.electron.build/cli).
 
-So to build for linux you could use the `--linux` flag like so: `yarn build --linux`.
+So to build for linux you could use the `--linux` flag like so: `npm run build -- --linux`.
 
 ## Want to Just Try Out or Contribute?
 

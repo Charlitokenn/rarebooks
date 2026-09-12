@@ -30,7 +30,7 @@
 
 ## In Progress
 - [ ] Web sub-phase 06 (Web Platform Foundation): code-complete on `webapp` (worker scaffold, `@clerk/hono` middleware, Clerk webhook provisioning, control-plane schema file, `fyo/demux` web branch, `rendererWeb.ts`, sign-in/dashboard pages). Awaiting: `/check verify` against live Clerk/Neon/Cloudflare accounts, then `/test`, `/check review`, `/document` — see `docs/scope/scope.md` feature 06.
-- [ ] Web sub-phase 07 (Tenant Schema & Data Layer): code-complete including the one-off migration runner (`yarn migrate:tenants`, spec 0002 AC-5, invocation decided 2026-09-12). Awaiting the same live verification pass — `migrate()` and doc CRUD are unit-proven and Postgres-proven locally but not yet against a real Neon project.
+- [ ] Web sub-phase 07 (Tenant Schema & Data Layer): code-complete including the one-off migration runner (`npm run migrate:tenants`, spec 0002 AC-5, invocation decided 2026-09-12). Awaiting the same live verification pass — `migrate()` and doc CRUD are unit-proven and Postgres-proven locally but not yet against a real Neon project.
 
 ## Up Next
 - [ ] Apply `worker/db/schema.sql` to the live control-plane Neon project and run feature 06's end-to-end verification (live Clerk org creation → webhook → Neon project → dashboard).
@@ -78,7 +78,7 @@
 
 **2026-09-12 (sync)**
 - /sync after the migration-runner work: reconciled this tracker, `architecture.md`'s stale "worker/ doesn't exist yet" note, `build-plan.md`'s stale "Not started" statuses for 06/07, and `code-standards.md`'s stale `@hono/clerk-auth` / `TENANT_CONNECTION_ENCRYPTION_KEY` / "confirm the driver" lines against the shipped code.
-- Spec 0002 AC-5 (tenant migration runner) decided and built: invocation is a one-off operator script (`yarn migrate:tenants` → `scripts/migrate-tenants.ts` → `custom/web/db/tenantMigrationRunner.ts`), not an HTTP route, not a Cron Trigger; rationale recorded in spec 0002's Decision section. Unit-tested (26 tape assertions, faked control plane); the live-Neon round trip is still open alongside the rest of feature 07's verification.
+- Spec 0002 AC-5 (tenant migration runner) decided and built: invocation is a one-off operator script (`npm run migrate:tenants` → `scripts/migrate-tenants.ts` → `custom/web/db/tenantMigrationRunner.ts`), not an HTTP route, not a Cron Trigger; rationale recorded in spec 0002's Decision section. Unit-tested (26 tape assertions, faked control plane); the live-Neon round trip is still open alongside the rest of feature 07's verification.
 
 **2026-09-02 (this session)**
 - Finalized the Web migration's payment/access-gating architecture: Keymint removed from Web (Desktop-only), ClickPesa removed from Web (Desktop-only), PayPal Subscriptions added for non-Tanzania users, Lipa Namba downgraded from an API integration (ClickPesa-style) to manual instructions + super-admin review for Tanzania users.
