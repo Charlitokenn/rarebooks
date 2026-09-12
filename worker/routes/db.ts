@@ -47,7 +47,9 @@ function isCallBody(value: unknown): value is CallBody {
   return (
     typeof value === 'object' &&
     value !== null &&
-    typeof (value as { method?: unknown }).method === 'string'
+    typeof (value as { method?: unknown }).method === 'string' &&
+    (!Object.prototype.hasOwnProperty.call(value, 'args') ||
+      Array.isArray((value as { args?: unknown }).args))
   );
 }
 
@@ -74,7 +76,13 @@ dbRoute.post('/call', requireOrgSession, async (c) => {
   const orgId = c.get('orgId');
   const body: unknown = await c.req.json().catch(() => null);
   if (!isCallBody(body)) {
-    return c.json({ error: 'Request body must include a method string' }, 400);
+    return c.json(
+      {
+        error:
+          'Request body must include a method string and optional args array',
+      },
+      400
+    );
   }
 
   let connectionString: string;
@@ -109,7 +117,13 @@ dbRoute.post('/bespoke', requireOrgSession, async (c) => {
   const orgId = c.get('orgId');
   const body: unknown = await c.req.json().catch(() => null);
   if (!isCallBody(body)) {
-    return c.json({ error: 'Request body must include a method string' }, 400);
+    return c.json(
+      {
+        error:
+          'Request body must include a method string and optional args array',
+      },
+      400
+    );
   }
 
   let connectionString: string;
