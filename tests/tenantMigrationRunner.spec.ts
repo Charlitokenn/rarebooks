@@ -1,8 +1,11 @@
 import test from 'tape';
 import { webcrypto } from 'node:crypto';
+import sinon from 'sinon';
+import DatabaseCore from '../backend/database/core';
 import {
   decryptTenantConnectionString,
   isMigratableStatus,
+  migrateTenantProject,
   runTenantMigrations,
   type ControlQueryFn,
   type TenantProjectRecord,
@@ -32,9 +35,19 @@ function createFakeDb(records: TenantProjectRecord[]): FakeDb {
 
     if (sql.startsWith('SELECT org_id, status, connection_string')) {
       if (sql.includes('WHERE org_id = ?')) {
-        return records.filter((r) => r.orgId === values[0]);
+        return records
+          .filter((r) => r.orgId === values[0])
+          .map((r) => ({
+            org_id: r.orgId,
+            status: r.status,
+            connection_string: r.encryptedConnectionString,
+          }));
       }
-      return records;
+      return records.map((r) => ({
+        org_id: r.orgId,
+        status: r.status,
+        connection_string: r.encryptedConnectionString,
+      }));
     }
 
     if (sql.startsWith('UPDATE tenant_projects')) {
@@ -138,6 +151,7 @@ test('--org limits the run to one tenant, and a missing org errors', async (t) =
     { orgId: 'org-a', includeProjectCreated: false, dryRun: false },
     {
       controlDb: db,
+      decrypt: async (connectionString) => connectionString,
       migrateTenantProject: async (orgId) => {
         migrated.push(orgId);
       },
@@ -176,6 +190,7 @@ test('one failing tenant does not abort the rollout, and failures land in the su
     { includeProjectCreated: false, dryRun: false },
     {
       controlDb: db,
+      decrypt: async (connectionString) => connectionString,
       log: () => undefined,
       migrateTenantProject: async (orgId) => {
         if (orgId === 'org-b') {
@@ -207,12 +222,61 @@ test('the recovery flag migrates PROJECT_CREATED tenants and advances them to RE
   const summary = await runTenantMigrations(
     secrets,
     { includeProjectCreated: true, dryRun: false },
-    { controlDb: db, log: () => undefined, migrateTenantProject: async () => undefined }
+    {
+      controlDb: db,
+      decrypt: async (connectionString) => connectionString,
+      log: () => undefined,
+      migrateTenantProject: async () => undefined,
+    }
   );
 
   t.equal(summary.migrated, 1);
   t.deepEqual(readyWrites, ['org-stranded'], 'the status write targeted it');
   t.equal(records[0].status, 'READY', 'conditional UPDATE advanced the row');
+  t.end();
+});
+
+test('only an absent CustomField table is ignored during migration', async (t) => {
+  let customFieldError: Error & { code?: string } = Object.assign(
+    new Error('relation "CustomField" does not exist'),
+    { code: '42P01' }
+  );
+  const connect = sinon
+    .stub(DatabaseCore.prototype, 'connect')
+    .callsFake(async function (this: DatabaseCore) {
+      this.knex = (async () => {
+        throw customFieldError;
+      }) as never;
+    });
+  const close = sinon.stub(DatabaseCore.prototype, 'close').resolves();
+  const setSchemaMap = sinon.stub(DatabaseCore.prototype, 'setSchemaMap');
+  const migrate = sinon.stub(DatabaseCore.prototype, 'migrate').resolves();
+
+  try {
+    await migrateTenantProject('org-a', 'postgres://unused', () => undefined);
+    t.equal(migrate.callCount, 1, 'missing CustomField table still migrates');
+
+    customFieldError = Object.assign(new Error('permission denied'), {
+      code: '42501',
+    });
+    let error: unknown;
+    try {
+      await migrateTenantProject('org-a', 'postgres://unused', () => undefined);
+    } catch (caught) {
+      error = caught;
+    }
+    t.equal(error, customFieldError, 'permission errors are rethrown');
+    t.equal(migrate.callCount, 1, 'permission errors stop before db.migrate');
+    t.equal(close.callCount, 2, 'connections close after either outcome');
+    t.equal(connect.callCount, 2, 'both attempts connect before querying');
+    t.equal(
+      setSchemaMap.callCount,
+      1,
+      'only the missing-table case sets schemas'
+    );
+  } finally {
+    sinon.restore();
+  }
   t.end();
 });
 
