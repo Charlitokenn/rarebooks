@@ -73,7 +73,7 @@ RareBooks is a fork of **Frappe Books**, an open-source offline-first double-ent
 └── utils/                       # Platform-agnostic shared utilities — shared
 ```
 
-`worker/`, `rendererWeb.ts`, and `custom/web/` are new — they don't exist in the repo yet as of this inspection (2026-09-02); the `rarebooks-webapp` branch currently contains only POS UI fixes, not this structure. Treat the paths above as the target layout to build toward, not confirmed current state.
+`worker/`, `rendererWeb.ts`, and `custom/web/` are new relative to upstream Frappe Books. As of 2026-09-12 they exist on this branch (built under specs 0001/0002): `worker/` (Hono API, Clerk middleware, control-plane + tenant DB layer), `custom/web/` (auth/provisioning, db, tenant migration runner), `src/pages/web/` + `src/web/` (sign-in, dashboard, Clerk client), `rendererWeb.ts`, `vite.config.web.ts`, and `scripts/migrate-tenants.*`. The paths above remain the target layout for the not-yet-built pieces (billing, payments, notifications).
 
 ---
 

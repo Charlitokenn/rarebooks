@@ -106,9 +106,9 @@ Restock alerts and payment-method notifications, including image support for res
 
 ---
 
-## Phase 4 — Web Migration (Not Started — target design, sequenced)
+## Phase 4 — Web Migration (in progress on the `webapp` branch)
 
-Move from a single-machine Electron app toward a multi-tenant web architecture: Cloudflare Workers, Neon, Clerk, Hono backend. **Nothing below exists in the codebase yet** — the `rarebooks-webapp` branch currently only contains POS UI grid refinements. This phase is broken into sub-phases so each is independently buildable and visually/functionally verifiable, per the Core Principle above — build the platform foundation before any payment integration, since payments depend on auth/tenancy existing first.
+Move from a single-machine Electron app toward a multi-tenant web architecture: Cloudflare Workers, Neon, Clerk, Hono backend. Sub-phases 06 and 07 are now code-complete on the `webapp` branch (platform foundation, provisioning, tenant schema migration, doc CRUD, and the one-off migration runner as of 2026-09-12), pending live-Neon/Clerk verification; 08 onward remains target design. `docs/specs/` and `docs/scope/scope.md` are the authoritative, current detail for what is built vs. planned — where this section's "Not started" lines and `@hono/clerk-auth` references disagree with them, the scope and specs are ahead of this file. This phase is broken into sub-phases so each is independently buildable and visually/functionally verifiable, per the Core Principle above — build the platform foundation before any payment integration, since payments depend on auth/tenancy existing first.
 
 ### 06 Web Platform Foundation & Control Plane
 
@@ -122,7 +122,7 @@ Stand up the Hono API, Clerk auth, and the control-plane Neon project — no acc
 
 **Logic:**
 
-- `worker/` scaffold: Hono app, `@hono/clerk-auth` middleware, `wrangler.toml`
+- `worker/` scaffold: Hono app, `@clerk/hono` middleware, `wrangler.toml`
 - Control-plane Neon project provisioned (once, manually or via a setup script): `organizations`, `tenant_projects`, `subscriptions`, `payments` tables
 - `../worker/routes/webhooks/organization-created.ts`: on org creation, call the Neon API (`@neon/sdk`'s `createAndConnect()`) to provision a new, isolated tenant project; encrypt and store its connection string in `tenant_projects` with status `PROJECT_CREATED`
 - `worker/db/control.ts`: fixed connection to the control-plane project
@@ -130,7 +130,7 @@ Stand up the Hono API, Clerk auth, and the control-plane Neon project — no acc
 - `fyo/demux/*.ts` web implementation (replacing `ipcRenderer` calls with `fetch()` against `worker/`)
 - `rendererWeb.ts` browser entry point
 
-**Status:** Not started.
+**Status:** Code-complete on the `webapp` branch (2026-09); pending live Clerk/Neon/Cloudflare verification (see `docs/scope/scope.md` feature 06).
 
 ---
 
@@ -149,7 +149,7 @@ Apply the accounting schema to freshly-provisioned tenant projects, and route do
 - Verify `models/**`/`reports/**` run correctly against `fyo.db` backed by a tenant's Neon project, not just SQLite (may surface Postgres-vs-SQLite query differences to fix)
 - A migration runner utility for rolling out future schema changes across every row in `tenant_projects`, not just one project
 
-**Status:** Not started. Depends on 06.
+**Status:** Code-complete on the `webapp` branch (2026-09), including the one-off tenant migration runner (`yarn migrate:tenants`, invocation decided 2026-09-12); pending live Neon verification. Depends on 06.
 
 ---
 

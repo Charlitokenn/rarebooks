@@ -22,7 +22,7 @@ Read the context files in this exact order before writing any code:
 
 ## Overview
 
-Simple bookkeeping app for small and medium businesses, forked from Frappe Books. Ships today as an Electron desktop app (Vue 3 + TypeScript + SQLite). This branch also contains the hosted web foundation: the Vue web client, Cloudflare Worker and Hono API, Clerk authentication, Neon control-plane integration, and per-organization tenant provisioning. The accounting-schema migration, tenant CRUD layer, subscription and payment flows, notifications, and production cutover remain planned.
+Simple bookkeeping app for small and medium businesses, forked from Frappe Books. Ships today as an Electron desktop app (Vue 3 + TypeScript + SQLite). This branch also contains the hosted web foundation: the Vue web client, Cloudflare Worker and Hono API, Clerk authentication, Neon control-plane integration, and per-organization tenant provisioning. The accounting-schema migration, tenant CRUD layer, and its one-off migration runner (`npm run migrate:tenants`) are now built on this branch; subscription and payment flows, notifications, and production cutover remain planned.
 
 ## Stack
 
@@ -30,11 +30,11 @@ Simple bookkeeping app for small and medium businesses, forked from Frappe Books
 - **Framework**: Electron (main + renderer process), Vue Router 4
 - **Database**: SQLite via better-sqlite3, Knex query builder
 - **Key dependencies**: Vue 3, Knex, Luxon (dates), Bree (job scheduling), Tailwind CSS
-- **Package manager**: yarn (yarn.lock is authoritative; a package-lock.json also exists but yarn is what scripts assume)
+- **Package manager**: npm (`package-lock.json` is authoritative since the web migration; `yarn.lock` was removed. The `yarn` commands below still run the same npm scripts under yarn 1 if you have it installed.)
 
 ## Build approach
 
-<TBD, set by /scope>
+Tracer Bullet (each feature built as a thin, complete vertical slice through every layer, working end to end, before the next one starts). Recorded in `docs/scope/scope.md`.
 
 ## Commands
 
@@ -49,6 +49,16 @@ yarn dev
 # Build
 yarn build
 yarn build --linux | --windows | --mac
+
+# Web (this branch)
+yarn dev:web          # Vite dev server (proxies /api and /webhooks to the worker)
+yarn dev:web:full     # Vite + `wrangler dev` together
+yarn build:web        # Vite production build into dist_web/
+yarn deploy:web       # build:web + wrangler deploy
+
+# Tenant schema rollout (spec 0002 AC-5, one-off operator script)
+yarn migrate:tenants -- --dry-run   # list tenants a schema change would migrate
+yarn migrate:tenants --             # fan out DatabaseCore.migrate() to every READY tenant
 
 # Test
 yarn test           # mocha + tape, server-side

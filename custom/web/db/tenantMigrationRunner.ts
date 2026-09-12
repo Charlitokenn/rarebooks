@@ -135,12 +135,11 @@ export async function listTenantProjects(
   db: ControlQueryFn,
   orgId?: string
 ): Promise<TenantProjectRecord[]> {
-  const rows = (orgId
-    ? await db`SELECT org_id, status, connection_string FROM tenant_projects WHERE org_id = ${orgId}`
-    : await db`SELECT org_id, status, connection_string FROM tenant_projects`) as unknown as Record<
-    string,
-    string
-  >[];
+  const rows = (
+    orgId
+      ? await db`SELECT org_id, status, connection_string FROM tenant_projects WHERE org_id = ${orgId}`
+      : await db`SELECT org_id, status, connection_string FROM tenant_projects`
+  ) as Record<string, string>[];
   return rows.map((row) => ({
     orgId: row.org_id,
     status: row.status,
@@ -163,7 +162,7 @@ export async function markTenantProjectReady(
     SET status = 'READY', provisioning_claim_id = NULL
     WHERE org_id = ${orgId} AND status = 'PROJECT_CREATED'
     RETURNING org_id
-  `) as unknown as Array<{ org_id: string }>;
+  `) as Array<{ org_id: string }>;
   return rows.length === 1;
 }
 
