@@ -1,7 +1,7 @@
 # 0002. Tenant schema & data layer
 
 **Date**: 2026-09-03
-**Status**: Proposed
+**Status**: In Progress
 
 ## Summary
 

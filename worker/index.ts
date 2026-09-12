@@ -9,6 +9,7 @@ import { clerkMiddleware } from '@clerk/hono';
 import type { WorkerEnv } from './types';
 import { meRoute } from './routes/me';
 import { dashboardRoute } from './routes/dashboard';
+import { dbRoute } from './routes/db';
 import { organizationCreatedRoute } from './routes/webhooks/organization-created';
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
@@ -21,6 +22,7 @@ app.get('/api/health', (c) => c.json({ ok: true, service: 'rarebooks-web' }));
 
 app.route('/api/me', meRoute);
 app.route('/api/dashboard', dashboardRoute);
+app.route('/api/db', dbRoute);
 app.route('/webhooks/organization-created', organizationCreatedRoute);
 
 export default app;
