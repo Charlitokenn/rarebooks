@@ -192,7 +192,10 @@ export async function migrateTenantProject(
     let rawCustomFields: RawCustomField[] = [];
     try {
       rawCustomFields = (await db.knex!('CustomField')) as RawCustomField[];
-    } catch {
+    } catch (error) {
+      if ((error as { code?: unknown }).code !== '42P01') {
+        throw error;
+      }
       // A tenant migrated before custom fields existed (or the first
       // recovery migrate of a freshly provisioned project) has no table yet.
       log(
