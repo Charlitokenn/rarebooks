@@ -22,10 +22,10 @@
 - [x] License validation bug fix: deactivated device could still validate as active (fixed)
 
 ### Web planning
-- [x] Confirmed target stack: Cloudflare Workers + Hono + Neon + Clerk + OneSignal
+- [x] Confirmed target stack: Cloudflare Workers + Hono + Neon + Clerk (notifications: shared ntfy path, not a separate web provider — see below)
 - [x] Decided access-gating model: subscription status + per-org seat limits enforced via Clerk (no device binding, no Keymint on Web)
 - [x] Decided payment model: Keymint removed entirely from Web (kept Desktop-only); ClickPesa removed entirely from Web; PayPal Subscriptions API for non-Tanzania users; Lipa Namba kept as manual instructions only (no API integration) for Tanzania users, verified by a super admin
-- [x] Sequenced Phase 4 into 7 sub-phases (06–12): platform foundation → multi-tenant data layer → subscription gating → PayPal → Lipa Namba → OneSignal → deploy/cutover
+- [x] Sequenced Phase 4 into 7 sub-phases (06–12): platform foundation → multi-tenant data layer → subscription gating → PayPal → Lipa Namba → ntfy notification verification → deploy/cutover
 - [x] All context files (architecture, project-overview, code-standards, library-docs, build-plan) updated to reflect the dual-target (Desktop/Web) split
 
 ## In Progress
@@ -62,7 +62,7 @@
 - **No SDK dependency for Keymint/ClickPesa** — both integrations use direct REST calls rather than adding a vendor SDK package, keeping the dependency surface small.
 
 ### Web (this session)
-- **Stack confirmed:** Cloudflare Workers + Hono + Neon + Clerk + OneSignal — unchanged from earlier planning, explicitly reconfirmed rather than assumed.
+- **Stack confirmed:** Cloudflare Workers + Hono + Neon + Clerk — unchanged from earlier planning, explicitly reconfirmed rather than assumed. (This line originally listed OneSignal too; that half was reversed 2026-09-12 — see the notifications decision below.)
 - **Keymint is Desktop-only.** Web has no device-bound license key at all; removed entirely from the Web target rather than adapted.
 - **Access gating on Web is subscription status + Clerk-enforced per-org seat limits** — chosen over a pure subscription-status-only model, so pricing can scale by seat count in addition to plan tier.
 - **ClickPesa is Desktop-only.** Removed entirely from Web — not reused, not called from any Web code path.
@@ -71,6 +71,7 @@
 - **Same shared `payments` ledger table for both PayPal and Lipa Namba claims**, distinguished by a `provider` column — avoids two parallel payment-tracking schemas. Lives in the control-plane project (see next decision), not in any tenant project.
 - **Multi-tenancy is a silo model: one Neon project per tenant**, not a shared database with an `org_id` column — chosen over the initially-drafted shared-database design. Each org gets its own Neon project, provisioned automatically via the Neon API (`@neon/sdk`) on org creation. A small shared control-plane Neon project holds `organizations`, `tenant_projects` (the org → project mapping, encrypted connection strings), `subscriptions`, and `payments` — never accounting data. This trades a per-request tenant-connection lookup for physical data isolation between tenants, removing the entire class of bug where a query is missing or has the wrong `org_id` filter.
 - **Seat limits are delegated to Clerk's own `maxAllowedMemberships`**, not reimplemented as a custom per-request check — found during the docs crosscheck that Clerk already provides this natively. Our worker only checks subscription status; Clerk enforces the member cap.
+- **Web keeps ntfy for notifications; the drafted OneSignal port is reversed (2026-09-12, Charles's decision).** The restock/payment triggers live in `models/**`, which run in the browser renderer on Web, and `src/utils/ntfy.ts` is a plain unauthenticated `POST https://ntfy.sh/<topic>` whose CORS preflight was confirmed to pass from a web origin the same day — so the shared path works on both targets with zero new code, zero Worker secrets, and none of the Clerk-membership fan-out the OneSignal design needed. Spec 0006 rewritten to a verification slice; `custom/web/notifications/` and `ONESIGNAL_*` env vars removed from the plan. If first-party browser push is ever wanted, that's a new spec, not a revival of 0006.
 
 ---
 
@@ -79,6 +80,11 @@
 **2026-09-12 (sync)**
 - /sync after the migration-runner work: reconciled this tracker, `architecture.md`'s stale "worker/ doesn't exist yet" note, `build-plan.md`'s stale "Not started" statuses for 06/07, and `code-standards.md`'s stale `@hono/clerk-auth` / `TENANT_CONNECTION_ENCRYPTION_KEY` / "confirm the driver" lines against the shipped code.
 - Spec 0002 AC-5 (tenant migration runner) decided and built: invocation is a one-off operator script (`npm run migrate:tenants` → `scripts/migrate-tenants.ts` → `custom/web/db/tenantMigrationRunner.ts`), not an HTTP route, not a Cron Trigger; rationale recorded in spec 0002's Decision section. Unit-tested (26 tape assertions, faked control plane); the live-Neon round trip is still open alongside the rest of feature 07's verification.
+
+**2026-09-12 (notifications decision)**
+- Reversed the Web notification provider switch: the hosted app keeps ntfy exactly as Desktop does; the drafted OneSignal port was never built and is withdrawn. Driven by two code facts — the restock/payment triggers are in `models/**`, which run in the browser renderer on Web, and `src/utils/ntfy.ts`'s unauthenticated topic POST passed a live CORS preflight from a web origin the same day.
+- Spec 0006 rewritten in place and renamed (`0006-onesignal-notifications.md` → `0006-ntfy-notifications.md`, git-tracked rename); it's now a small verification slice: Settings fields persist per tenant on Web, a browser-origin publish observed arriving from the deployed origin (AC-3's outstanding evidence — preflight pass is not delivery), and the three existing notification specs pass unmodified on the web build. Removed the `custom/web/notifications/` module and `ONESIGNAL_APP_ID`/`ONESIGNAL_API_KEY` Worker secrets from the plan across `architecture.md`, `project-overview.md`, `code-standards.md`, `library-docs.md` (OneSignal section replaced by a shared ntfy one), `build-plan.md`, spec 0007, `AGENTS.md`, and `docs/scope/scope.md`.
+- Noted for whoever implements: `src/utils/ntfy.ts` hardcodes the `https://ntfy.sh` base, so self-hosted ntfy support would be a small change on both targets, not a Web-only one — tracked as spec 0006 Follow-up, and only if a tenant actually needs private or high-volume delivery.
 
 **2026-09-02 (this session)**
 - Finalized the Web migration's payment/access-gating architecture: Keymint removed from Web (Desktop-only), ClickPesa removed from Web (Desktop-only), PayPal Subscriptions added for non-Tanzania users, Lipa Namba downgraded from an API integration (ClickPesa-style) to manual instructions + super-admin review for Tanzania users.
@@ -121,5 +127,5 @@
 - If starting sub-phase 06, provision the control-plane Neon project first (manually or via a one-time setup script) before wiring the `../worker/routes/webhooks/organization-created.ts` webhook that provisions tenant projects.
 - Re-check PayPal's current `Create Subscription` request schema before implementing sub-phase 09 — this session's crosscheck found two deprecated fields on that exact shape, which signals the API surface moves; don't build from the snippet in `library-docs.md` without a fresh check.
 - Decide the actual seat counts per subscription tier before sub-phase 08, and confirm whether any tier needs Clerk's paid B2B Authentication add-on (required above 20 seats per org).
-- General rule going forward: this session's docs crosscheck has a shelf life like any other vendor research — re-verify Neon, Clerk, PayPal, and OneSignal specifics again before actually implementing each, don't treat this pass as permanently current.
+- General rule going forward: this session's docs crosscheck has a shelf life like any other vendor research — re-verify Neon, Clerk, and PayPal specifics again before actually implementing each, don't treat this pass as permanently current. (OneSignal dropped from the list on 2026-09-12 — Web keeps ntfy, see Decisions Made.)
 - If resuming Desktop licensing/payments work instead, re-read `custom/licensing/README.md` first — that code is untouched by all of this session's Web planning.

@@ -10,6 +10,8 @@ _Verified against current docs: 2026-09-02, rechecked 2026-09-06 (via Context7 +
 
 _2026-09-06 recheck found this file's own Hono/Clerk sections had gone stale — they still showed the pre-migration `@hono/clerk-auth` + hand-rolled `svix` pattern after the actual code had already moved to `@clerk/hono` (see `worker/routes/webhooks/organization-created.ts`'s own note on the swap, and `docs/specs/0001-web-platform-foundation-control-plane.md`, which already had it right). Fixed below. Everything else checked in this pass — `@neon/sdk`'s error envelope/pagination/retry model, PayPal's `applicationContext`/`autoRenewal` deprecation, OneSignal's `include_aliases`/`Key ` auth prefix — matched what's written here._
 
+_2026-09-12: the OneSignal section that followed that recheck is gone — the Web target keeps ntfy and never switches providers (Charles's decision, `docs/specs/0006-ntfy-notifications.md`). The ntfy section below replaced it._
+
 ---
 
 ## Before Using Any Library
@@ -424,36 +426,30 @@ POST /api/admin/payments/:id/reject
 
 ---
 
-## OneSignal (notifications) — Web only, target design
+## ntfy (notifications) — Shared (both Desktop and Web)
 
-Replaces `ntfy` for the Web target; same triggering logic (restock, payment events) as Desktop.
+Single delivery path for restock, payment, and POS shift-close notifications on **both** targets: `src/utils/ntfy.ts` → `sendNtfyNotification(fyo, message, title?, tags?, priority?)`, called from the shared model layer (`models/baseModels/SalesInvoice/SalesInvoice.ts`, `models/inventory/Point of Sale/POSClosingShift.ts`). There is no separate Web notification module and no Worker route for it — on Web the models run in the browser renderer, so the publish happens browser-side, same call as Desktop. The previously-planned OneSignal port (spec 0006's earlier draft) was reversed on 2026-09-12; see `docs/specs/0006-ntfy-notifications.md`.
 
-**Correction from an earlier draft of this plan:** the earlier snippet used `include_external_user_ids`, which is not the current targeting parameter. The confirmed current API uses `include_aliases` with a `target_channel`.
+### Usage Pattern
 
-### Usage Pattern (confirmed against current OpenAPI spec)
-
-```typescript
-POST https://api.onesignal.com/notifications
-Authorization: Key ONESIGNAL_API_KEY   // note: "Key " prefix, not "Bearer "
-Content-Type: application/json
-
-{
-  "app_id": ONESIGNAL_APP_ID,
-  "target_channel": "push",              // required when using include_aliases
-  "include_aliases": {
-    "external_id": ["org_abc123", "org_def456"]  // your own IDs — e.g. Clerk user/org IDs
-  },
-  "contents": { "en": "Restocked: 3 items are low on stock" }
-}
 ```
+POST https://ntfy.sh/<topic>          // unauthenticated; the topic is the credential
+Body: <message>
+Headers (all optional except as noted):
+  Title / Tags / Priority / Markdown
+```
+
+Enabled per company by `POSSettings.enableMobileNotifications` + `POSSettings.messageChannel` (the topic). Both fields are tenant data — on Web they live in the org's own Neon project via the shared Settings surface, not in the control plane.
 
 **Rules:**
 
-- Reuse the existing restock/payment-event trigger logic (`tests/restockNotification.spec.ts`, `tests/paymentMethodNotification.spec.ts` describe the current Desktop behavior) — only the delivery mechanism changes for Web.
-- `include_aliases` is **not compatible** with `filters`, `include_subscription_ids`, `included_segments`, or `excluded_segments` in the same call — pick one targeting method per request, don't try to combine them.
-- Limit: up to 20,000 external IDs per call under `include_aliases.external_id`.
-- Config: `ONESIGNAL_APP_ID`, `ONESIGNAL_API_KEY` as Worker secrets. The `Authorization` header value is literally `Key <api_key>` — a common mistake is using `Bearer <api_key>` instead, which fails.
-- Use an idempotency key (a client-generated UUID, one per logically distinct send) if resending the same notification is a real risk from a retry — the API deduplicates on it within a 30-day window.
+- Reuse `sendNtfyNotification` unchanged — do not add a `custom/web/notifications/` delivery module or any Worker notification route. The existing trigger logic (`tests/restockNotification.spec.ts`, `tests/paymentMethodNotification.spec.ts`, `tests/ntfyNotification.spec.ts`) is shared code and must keep passing unmodified on the web build.
+- The call is **fire-and-forget**: an 8s `AbortController` timeout, failures logged via `console.error`, never thrown. A notification outage must never fail an invoice submit or a shift close — do not "fix" this into a throwing call.
+- The topic is validated with `/^[A-Za-z0-9_-]+$/` and URI-encoded before the fetch; keep that validation if the base URL ever becomes configurable.
+- No auth header and no API key: on the public server the topic is effectively a password ("there is no sign-up, the topic is essentially a password" — ntfy's own model). Use unguessable per-org topics and never display one outside its own Settings field.
+- **No `NTFY_*` env var and no Worker secret** for this on Web. Do not reintroduce `ONESIGNAL_APP_ID` / `ONESIGNAL_API_KEY`.
+- **Browser-origin publishes confirmed possible** (2026-09-12): a live CORS preflight against ntfy.sh returned `access-control-allow-origin: *`, POST in `access-control-allow-methods`, `access-control-allow-headers: *`. AC-3 in spec 0006 still wants an observed delivery from the deployed origin before GA — ntfy.sh's published anonymous rate and message-size limits were not found on the docs pages checked, so re-verify before relying on notification volume.
+- If a tenant needs private or high-volume delivery, the answer is a self-hosted ntfy server plus a configurable base URL in `src/utils/ntfy.ts` (currently hardcoded to `https://ntfy.sh`) — a change that applies to Desktop too, tracked as spec 0006 Follow-up, not in scope now.
 
 ---
 
@@ -486,5 +482,5 @@ wrangler dev         # local dev server for the Hono API
 
 **Rules:**
 
-- Secrets (`CLERK_SECRET_KEY`, `PAYPAL_CLIENT_SECRET`, `ONESIGNAL_API_KEY`, Neon connection string, etc.) go through `wrangler secret put`, never committed to `wrangler.toml`.
+- Secrets (`CLERK_SECRET_KEY`, `PAYPAL_CLIENT_SECRET`, Neon connection string, etc.) go through `wrangler secret put`, never committed to `wrangler.toml`. Notifications need none — Web publishes to ntfy from the browser, see the ntfy section.
 - `wrangler.toml` should not exist yet in this repo as of the last inspection — confirm current state before assuming a working config is already checked in.

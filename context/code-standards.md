@@ -72,7 +72,7 @@ Implementation rules and conventions for the entire project. The AI agent must f
 
 - Every route handler validates its input before processing, same as Desktop's IPC handlers.
 - Return `{ success: boolean, data?, error? }` shaped JSON responses — keep this convention identical between Desktop's IPC results and Web's HTTP responses so `fyo`'s demux layer can normalize both.
-- PayPal/OneSignal API clients wrap external calls with retry logic and never expose raw provider error bodies to the client — same rule as Desktop's Keymint/ClickPesa clients.
+- PayPal API clients wrap external calls with retry logic and never expose raw provider error bodies to the client — same rule as Desktop's Keymint/ClickPesa clients. (ntfy is the exception on purpose: `sendNtfyNotification` is fire-and-forget with a timeout and logs only, never retrying or throwing — see spec 0006.)
 - Auth/org/subscription middleware always runs first — never add a tenant-data route that skips it "just for this one case."
 
 ---
@@ -149,9 +149,9 @@ _(No project-wide analytics/telemetry SDK is wired in beyond the notification te
 | `PAYPAL_CLIENT_SECRET`     | `custom/web/payments/paypal-client.ts`         |
 | `PAYPAL_PLAN_ID`           | `custom/web/payments/paypal-client.ts`         |
 | `PAYPAL_WEBHOOK_ID`        | `worker/routes/payments/paypal-webhook.ts` (signature verification) |
-| `ONESIGNAL_APP_ID`         | `custom/web/notifications/`                    |
-| `ONESIGNAL_API_KEY`        | `custom/web/notifications/`                    |
 | `LIPA_NAMBA_INSTRUCTIONS`  | Billing page — paybill/business number + reference format shown to Tanzania users (kept as config, not hardcoded, per `library-docs.md`) |
+
+There is deliberately **no notification variable** here (no `ONESIGNAL_*`, no `NTFY_*`): Web keeps Desktop's shared ntfy path, which is unauthenticated, per-company settings-driven, and browser-side — see `docs/specs/0006-ntfy-notifications.md`.
 
 **Note:** there is no `KEYMINT_*`, `ENABLE_LICENSING`, or `CLICKPESA_*` variable on Web — those are Desktop-only and must never appear in `wrangler.toml` or Worker secrets. There is also no single `DATABASE_URL` for Web — `CONTROL_DATABASE_URL` is the one fixed connection (control-plane project only); every tenant's own connection string is looked up dynamically at request time from `tenant_projects`, not set as a static env var (see `library-docs.md` → Neon).
 
@@ -195,4 +195,4 @@ Approved core dependencies for this project (see `package.json` for exact versio
 - `@clerk/clerk-js` + `@clerk/ui` (root package) — Clerk's browser SDK and prebuilt components for the web client (`src/web/clerk.ts`, `src/pages/web/`)
 - `wrangler` (dev dependency) — Cloudflare Workers CLI/deploy tooling
 
-Do not install any other packages without updating this list first. Desktop's licensing/payment integrations (Keymint, ClickPesa) are intentionally dependency-light (direct REST calls via `node-fetch`) rather than adding heavier SDKs. The Web target's PayPal and OneSignal integrations should follow the same dependency-light pattern (direct REST calls) — do not add a PayPal or OneSignal SDK package unless a strong reason emerges, to keep both targets consistent and auditable.
+Do not install any other packages without updating this list first. Desktop's licensing/payment integrations (Keymint, ClickPesa) are intentionally dependency-light (direct REST calls via `node-fetch`) rather than adding heavier SDKs. The Web target's PayPal integration follows the same dependency-light pattern (direct REST calls) — do not add a PayPal SDK package unless a strong reason emerges, to keep both targets consistent and auditable. Notifications add no package on either target: both use the shared `fetch()`-based `src/utils/ntfy.ts`.
