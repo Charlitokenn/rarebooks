@@ -20,6 +20,7 @@ import {
   ColumnDiff,
   FieldValueMap,
   GetQueryBuilderOptions,
+  KnexColumnType,
   MigrationConfig,
   NonExtantConfig,
   SingleValue,
@@ -47,14 +48,42 @@ import {
 
 export default class DatabaseCore extends DatabaseBase {
   knex?: Knex;
-  typeMap = sqliteTypeMap;
+  typeMap: Record<string, KnexColumnType>;
   dbPath: string;
   schemaMap: SchemaMap = {};
   connectionParams: Knex.Config;
 
-  constructor(dbPath?: string) {
+  /**
+   * Desktop: `new DatabaseCore(dbPath)` — a SQLite file, unchanged.
+   *
+   * Web (worker/db/resolve-tenant.ts): `new DatabaseCore(connectionParams)` —
+   * a full Knex config for a tenant's Postgres project. `typeMap` is the same
+   * `sqliteTypeMap` by default on both: despite the name, its values
+   * (`text`, `integer`, `float`, `boolean`, `date`, `datetime`, `time`) are
+   * Knex's own portable schema-builder method names, not raw SQL types, so
+   * the same map already works against `client: 'pg'` — see
+   * `#buildColumnForTable`, which calls `table[columnType](...)`. No
+   * Postgres flavored type map was actually needed.
+   */
+  constructor(dbPath?: string);
+  constructor(
+    connectionParams: Knex.Config,
+    typeMap?: Record<string, KnexColumnType>
+  );
+  constructor(
+    dbPathOrConnectionParams?: string | Knex.Config,
+    typeMap: Record<string, KnexColumnType> = sqliteTypeMap
+  ) {
     super();
-    this.dbPath = dbPath ?? ':memory:';
+    this.typeMap = typeMap;
+
+    if (typeof dbPathOrConnectionParams === 'object') {
+      this.dbPath = ':memory:';
+      this.connectionParams = dbPathOrConnectionParams;
+      return;
+    }
+
+    this.dbPath = dbPathOrConnectionParams ?? ':memory:';
     this.connectionParams = {
       client: 'better-sqlite3',
       connection: {
@@ -63,6 +92,10 @@ export default class DatabaseCore extends DatabaseBase {
       useNullAsDefault: true,
       asyncStackTraces: process.env.NODE_ENV === 'development',
     };
+  }
+
+  get #isSqlite(): boolean {
+    return this.connectionParams.client === 'better-sqlite3';
   }
 
   static async getCountryCode(dbPath: string): Promise<string> {
@@ -94,7 +127,10 @@ export default class DatabaseCore extends DatabaseBase {
 
   async connect() {
     this.knex = knex(this.connectionParams);
-    await this.knex.raw('PRAGMA foreign_keys=ON');
+    if (this.#isSqlite) {
+      // Postgres enforces foreign keys by default; nothing to opt into.
+      await this.knex.raw('PRAGMA foreign_keys=ON');
+    }
   }
 
   async close() {
@@ -127,6 +163,19 @@ export default class DatabaseCore extends DatabaseBase {
     await config.pre?.();
     for (const schemaName of create) {
       await this.#createTable(schemaName);
+    }
+
+    if (!this.#isSqlite) {
+      // Second pass: add every Link field's foreign key now that every
+      // table in this batch exists (see #runCreateTableQuery).
+      for (const schemaName of create) {
+        const linkFields = (this.schemaMap[schemaName]?.fields ?? []).filter(
+          (f) => f.fieldtype === FieldTypeEnum.Link && f.target
+        );
+        if (linkFields.length) {
+          await this.#addForeignKeys(schemaName, linkFields);
+        }
+      }
     }
 
     for (const config of alter) {
@@ -402,7 +451,9 @@ export default class DatabaseCore extends DatabaseBase {
   }
 
   async prestigeTheTable(schemaName: string, tableRows: FieldValueMap[]) {
-    // Alter table hacx for sqlite in case of schema change.
+    // SQLite only (see #addForeignKeys): rebuild hack, since SQLite can't
+    // add a foreign key to an existing table any other way. Postgres adds
+    // the constraint directly instead.
     const tempName = `__${schemaName}`;
 
     // Create replacement table
@@ -420,19 +471,34 @@ export default class DatabaseCore extends DatabaseBase {
   }
 
   async #getTableColumns(schemaName: string): Promise<string[]> {
-    const info: FieldValueMap[] = await this.knex!.raw(
-      `PRAGMA table_info(${schemaName})`
-    );
-    return info.map((d) => d.name as string);
+    // columnInfo() is Knex's own portable introspection call — works
+    // identically across better-sqlite3 and pg, so no PRAGMA needed here.
+    const info = await this.knex!(schemaName).columnInfo();
+    return Object.keys(info);
   }
 
   async truncate(tableNames?: string[]) {
     if (tableNames === undefined) {
-      const q = (await this.knex!.raw(`
+      if (this.#isSqlite) {
+        tableNames = (
+          (await this.knex!.raw(`
         select name from sqlite_schema
         where type='table'
-        and name not like 'sqlite_%'`)) as { name: string }[];
-      tableNames = q.map((i) => i.name);
+        and name not like 'sqlite_%'`)) as { name: string }[]
+        ).map((i) => i.name);
+      } else {
+        const publicTableNames = (
+          (await this.knex!('information_schema.tables')
+            .where('table_schema', 'public')
+            .andWhere('table_type', 'BASE TABLE')
+            .select('table_name')) as { table_name: string }[]
+        ).map((i) => `public.${i.table_name}`);
+
+        if (publicTableNames.length) {
+          await this.knex!.raw('TRUNCATE TABLE ?? CASCADE', [publicTableNames]);
+        }
+        return;
+      }
     }
 
     for (const name of tableNames) {
@@ -441,10 +507,24 @@ export default class DatabaseCore extends DatabaseBase {
   }
 
   async #getForeignKeys(schemaName: string): Promise<string[]> {
-    const foreignKeyList: FieldValueMap[] = await this.knex!.raw(
-      `PRAGMA foreign_key_list(${schemaName})`
-    );
-    return foreignKeyList.map((d) => d.from as string);
+    if (this.#isSqlite) {
+      const foreignKeyList: FieldValueMap[] = await this.knex!.raw(
+        `PRAGMA foreign_key_list(${schemaName})`
+      );
+      return foreignKeyList.map((d) => d.from as string);
+    }
+
+    // Postgres: no PRAGMA equivalent, ask information_schema instead.
+    const rows = (await this.knex!('information_schema.key_column_usage as kcu')
+      .join(
+        'information_schema.table_constraints as tc',
+        'kcu.constraint_name',
+        'tc.constraint_name'
+      )
+      .where('tc.constraint_type', 'FOREIGN KEY')
+      .andWhere('tc.table_name', schemaName)
+      .select('kcu.column_name')) as { column_name: string }[];
+    return rows.map((r) => r.column_name);
   }
 
   #getQueryBuilder(
@@ -596,7 +676,11 @@ export default class DatabaseCore extends DatabaseBase {
     return newForeignKeys;
   }
 
-  #buildColumnForTable(table: Knex.AlterTableBuilder, field: Field) {
+  #buildColumnForTable(
+    table: Knex.AlterTableBuilder,
+    field: Field,
+    options: { skipForeignKey?: boolean } = {}
+  ) {
     if (field.fieldtype === FieldTypeEnum.Table) {
       // In case columnType is "Table"
       // childTable links are handled using the childTable's "parent" field
@@ -628,7 +712,11 @@ export default class DatabaseCore extends DatabaseBase {
     }
 
     // link
-    if (field.fieldtype === FieldTypeEnum.Link && field.target) {
+    if (
+      field.fieldtype === FieldTypeEnum.Link &&
+      field.target &&
+      !options.skipForeignKey
+    ) {
       const targetSchemaName = field.target;
       const schema = this.schemaMap[targetSchemaName] as Schema;
       table
@@ -647,7 +735,7 @@ export default class DatabaseCore extends DatabaseBase {
       }
 
       for (const field of diff.added) {
-        this.#buildColumnForTable(table, field);
+        this.#buildColumnForTable(table, field, { skipForeignKey: true });
       }
     });
 
@@ -656,7 +744,7 @@ export default class DatabaseCore extends DatabaseBase {
     }
 
     if (newForeignKeys.length) {
-      await this.#addForeignKeys(schemaName);
+      await this.#addForeignKeys(schemaName, newForeignKeys);
     }
   }
 
@@ -669,9 +757,16 @@ export default class DatabaseCore extends DatabaseBase {
   }
 
   #runCreateTableQuery(schemaName: string, fields: Field[]) {
+    // Postgres validates a foreign key's target table at DDL time, unlike
+    // SQLite; a fresh multi table migrate() creates tables in schemaMap
+    // order, not dependency order, so an inline `.foreign()` can reference
+    // a table that doesn't exist yet. Skip it here and add every foreign
+    // key in a second pass, once every table in this batch exists — see
+    // migrate()'s `create` loop.
+    const skipForeignKey = !this.#isSqlite;
     return this.knex!.schema.createTable(schemaName, (table) => {
       for (const field of fields) {
-        this.#buildColumnForTable(table, field);
+        this.#buildColumnForTable(table, field, { skipForeignKey });
       }
     });
   }
@@ -738,9 +833,26 @@ export default class DatabaseCore extends DatabaseBase {
     child.idx ??= idx;
   }
 
-  async #addForeignKeys(schemaName: string) {
-    const tableRows = await this.knex!.select().from(schemaName);
-    await this.prestigeTheTable(schemaName, tableRows);
+  async #addForeignKeys(schemaName: string, newForeignKeys: Field[]) {
+    if (this.#isSqlite) {
+      // SQLite can't add a foreign key to an existing table; rebuild it.
+      const tableRows = await this.knex!.select().from(schemaName);
+      await this.prestigeTheTable(schemaName, tableRows);
+      return;
+    }
+
+    // Postgres: add each constraint directly, no rebuild needed.
+    await this.knex!.schema.alterTable(schemaName, (table) => {
+      for (const field of newForeignKeys) {
+        if (field.fieldtype !== FieldTypeEnum.Link || !field.target) continue;
+        table
+          .foreign(field.fieldname)
+          .references('name')
+          .inTable(field.target)
+          .onUpdate('CASCADE')
+          .onDelete('RESTRICT');
+      }
+    });
   }
 
   async #loadChildren(

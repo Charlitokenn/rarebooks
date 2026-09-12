@@ -51,6 +51,48 @@ test('db init, migrate, close', async (t) => {
   await assertDoesNotThrow(async () => await db.close());
 });
 
+test('Postgres full truncate uses one cascading statement', async (t) => {
+  const db = new DatabaseCore({ client: 'pg', connection: '' });
+  const rawCalls: Array<{ sql: string; bindings: unknown[] }> = [];
+  const deletedTables: string[] = [];
+  const fakeKnex = Object.assign(
+    (tableName: string) => {
+      const query = {
+        where: () => query,
+        andWhere: () => query,
+        select: async () => [{ table_name: 'Parent' }, { table_name: 'Child' }],
+        del: async () => {
+          deletedTables.push(tableName);
+        },
+      };
+      return query;
+    },
+    {
+      raw: async (sql: string, bindings: unknown[]) => {
+        rawCalls.push({ sql, bindings });
+      },
+    }
+  );
+  db.knex = fakeKnex as never;
+
+  await db.truncate();
+
+  t.deepEqual(rawCalls, [
+    {
+      sql: 'TRUNCATE TABLE ?? CASCADE',
+      bindings: [['public.Parent', 'public.Child']],
+    },
+  ]);
+  t.deepEqual(deletedTables, [], 'full cleanup does not issue deletes');
+
+  await db.truncate(['Child', 'Parent']);
+  t.deepEqual(
+    deletedTables,
+    ['Child', 'Parent'],
+    'targeted cleanup keeps the requested delete behavior'
+  );
+});
+
 /**
  * DatabaseCore: Migrate and Check Db
  */

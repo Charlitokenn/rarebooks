@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "dom"],
     "module": "ES2022",
     "moduleResolution": "Bundler",
     "types": ["@cloudflare/workers-types"],
@@ -11,7 +11,21 @@
     "resolveJsonModule": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": "..",
+    "paths": {
+      "src/*": ["src/*"],
+      "schemas/*": ["schemas/*"],
+      "main/*": ["main/*"],
+      "backend/*": ["backend/*"],
+      "regional/*": ["regional/*"],
+      "fixtures/*": ["fixtures/*"],
+      "reports/*": ["reports/*"],
+      "models/*": ["models/*"],
+      "utils/*": ["utils/*"],
+      "dummy/*": ["dummy/*"],
+      "custom/*": ["custom/*"]
+    }
   },
   "include": ["**/*.ts", "../custom/web/**/*.ts"]
 }
