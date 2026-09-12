@@ -112,8 +112,7 @@ test('a dry run touches nothing and reports what would migrate', async (t) => {
       encryptedConnectionString: 'blob',
     },
     {
-      orgId:
-        'org-project-created',
+      orgId: 'org-project-created',
       status: 'PROJECT_CREATED',
       encryptedConnectionString: 'blob',
     },
@@ -286,9 +285,13 @@ test('the decrypt reads the AES-256-GCM envelope worker/lib/encryption.ts writes
   const key = new Uint8Array(32).fill(7);
   const rawKey = Buffer.from(key).toString('base64');
   const iv = new Uint8Array(12).fill(3);
-  const cryptoKey = await crypto.subtle.importKey('raw', key, 'AES-GCM', false, [
-    'encrypt',
-  ]);
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    key,
+    'AES-GCM',
+    false,
+    ['encrypt']
+  );
   const ciphertext = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv },
     cryptoKey,
@@ -306,7 +309,10 @@ test('the decrypt reads the AES-256-GCM envelope worker/lib/encryption.ts writes
   );
   let keyErr: unknown;
   try {
-    await decryptTenantConnectionString(encoded, Buffer.alloc(31).toString('base64'));
+    await decryptTenantConnectionString(
+      encoded,
+      Buffer.alloc(31).toString('base64')
+    );
   } catch (e) {
     keyErr = e;
   }

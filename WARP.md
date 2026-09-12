@@ -10,11 +10,11 @@ Frappe Books is an open-source accounting software built with Electron, Vue.js 3
 
 ### Setup
 ```bash
-# Install dependencies (requires Node.js v20.18.1 and yarn)
-yarn
+# Install dependencies (requires Node.js v20.18.1 and npm; Yarn Classic is optional)
+npm install
 
 # Rebuild native modules after install
-yarn postinstall
+npm run postinstall
 ```
 
 ### Development
@@ -22,48 +22,48 @@ yarn postinstall
 # Start development server with hot reload
 # Note: First boot takes time as files are individually served
 # Electron runs with --inspect flag on port 5858 for debugging
-yarn dev
+npm run dev
 ```
 
 ### Building
 ```bash
 # Build for current platform
-yarn build
+npm run build
 
 # Build for specific platform
-yarn build --linux
-yarn build --windows
-yarn build --mac
+npm run build -- --linux
+npm run build -- --windows
+npm run build -- --mac
 ```
 
 ### Testing
 ```bash
 # Run all tests (uses mocha and tape)
-yarn test
+npm run test
 
 # Run specific test file or pattern
 scripts/test.sh path/to/test.spec.ts
 
 # Run UI tests
-yarn uitest
+npm run uitest
 ```
 
 ### Linting & Formatting
 ```bash
 # Lint TypeScript and Vue files
-yarn lint
+npm run lint
 
 # Format code with Prettier
-yarn format
+npm run format
 ```
 
 ### Other Commands
 ```bash
 # Generate translations
-yarn script:translate
+npm run script:translate
 
 # Profile performance
-yarn script:profile
+npm run script:profile
 ```
 
 ## Architecture

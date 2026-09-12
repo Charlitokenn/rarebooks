@@ -4,12 +4,12 @@
 
 ### 1. Install Dependencies
 ```bash
-yarn
+npm install
 ```
 
 ### 2. Run the Application
 ```bash
-yarn dev
+npm run dev
 ```
 
 ### 3. Create Your First Company
@@ -66,19 +66,19 @@ Go to: **Setup → Users** → Edit super admin → Change password
 
 ```bash
 # Development
-yarn dev
+npm run dev
 
 # Build for production
-yarn build
+npm run build
 
 # Run tests
-yarn test
+npm run test
 
 # Lint code
-yarn lint
+npm run lint
 
 # Format code
-yarn format
+npm run format
 ```
 
 ---

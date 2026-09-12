@@ -2,9 +2,9 @@
 
 # Progress Tracker
 
-**Last updated:** 2026-09-03
-**Current phase:** Phase 4 — Web Migration (target design finalized and crosschecked against current vendor docs; no code written yet)
-**Overall status:** On track for Desktop. Web migration plan is decision-complete and its library usage has been verified against current documentation (Context7 + Neon's own docs) rather than assumed conventions — next session should start on sub-phase 06 (Web Platform Foundation & Control Plane).
+**Last updated:** 2026-09-12
+**Current phase:** Phase 4 — Web Migration (sub-phases 06 and 07 code-complete on the `webapp` branch, awaiting live-Neon/Clerk verification; 08 onward not started)
+**Overall status:** On track for Desktop. The Web migration has moved from planning to code: the worker scaffold, Clerk auth, tenant provisioning, sign-in/dashboard web pages, the Postgres retarget of `DatabaseCore`, doc CRUD routes, and the one-off tenant migration runner are all committed on `webapp`. Remaining before 06/07 can be called done: applying `worker/db/schema.sql` to a live control-plane project and proving the real Neon/Clerk round trips (see `docs/scope/scope.md` features 06–07).
 
 ---
 
@@ -29,10 +29,11 @@
 - [x] All context files (architecture, project-overview, code-standards, library-docs, build-plan) updated to reflect the dual-target (Desktop/Web) split
 
 ## In Progress
-- [ ] None — Web migration is fully planned but not yet started in code. Desktop has no in-progress work currently flagged (most recent commits are POS bug fixes and repo housekeeping).
+- [ ] Web sub-phase 06 (Web Platform Foundation): code-complete on `webapp` (worker scaffold, `@clerk/hono` middleware, Clerk webhook provisioning, control-plane schema file, `fyo/demux` web branch, `rendererWeb.ts`, sign-in/dashboard pages). Awaiting: `/check verify` against live Clerk/Neon/Cloudflare accounts, then `/test`, `/check review`, `/document` — see `docs/scope/scope.md` feature 06.
+- [ ] Web sub-phase 07 (Tenant Schema & Data Layer): code-complete including the one-off migration runner (`npm run migrate:tenants`, spec 0002 AC-5, invocation decided 2026-09-12). Awaiting the same live verification pass — `migrate()` and doc CRUD are unit-proven and Postgres-proven locally but not yet against a real Neon project.
 
 ## Up Next
-- [ ] Start Phase 4, sub-phase 06 (Web Platform Foundation): scaffold `worker/`, wire `@hono/clerk-auth`, stand up Neon connectivity, build the Web `fyo/demux` implementation and `rendererWeb.ts` entry point.
+- [ ] Apply `worker/db/schema.sql` to the live control-plane Neon project and run feature 06's end-to-end verification (live Clerk org creation → webhook → Neon project → dashboard).
 - [ ] Decide on the Postgres/Neon client package for the Workers runtime (e.g. `@neondatabase/serverless`) before sub-phase 07 starts — confirmed compatible driver needed, not assumed.
 - [ ] Set up PayPal sandbox app + Clerk instance + Neon project (accounts/credentials) ahead of sub-phases 08–09, so implementation isn't blocked waiting on account provisioning.
 - [ ] Rotate/replace default Desktop super admin credentials before any production deployment (unrelated to Web, still open).
@@ -74,6 +75,10 @@
 ---
 
 ## Session Notes
+
+**2026-09-12 (sync)**
+- /sync after the migration-runner work: reconciled this tracker, `architecture.md`'s stale "worker/ doesn't exist yet" note, `build-plan.md`'s stale "Not started" statuses for 06/07, and `code-standards.md`'s stale `@hono/clerk-auth` / `TENANT_CONNECTION_ENCRYPTION_KEY` / "confirm the driver" lines against the shipped code.
+- Spec 0002 AC-5 (tenant migration runner) decided and built: invocation is a one-off operator script (`npm run migrate:tenants` → `scripts/migrate-tenants.ts` → `custom/web/db/tenantMigrationRunner.ts`), not an HTTP route, not a Cron Trigger; rationale recorded in spec 0002's Decision section. Unit-tested (26 tape assertions, faked control plane); the live-Neon round trip is still open alongside the rest of feature 07's verification.
 
 **2026-09-02 (this session)**
 - Finalized the Web migration's payment/access-gating architecture: Keymint removed from Web (Desktop-only), ClickPesa removed from Web (Desktop-only), PayPal Subscriptions added for non-Tanzania users, Lipa Namba downgraded from an API integration (ClickPesa-style) to manual instructions + super-admin review for Tanzania users.

@@ -138,13 +138,13 @@ _(No project-wide analytics/telemetry SDK is wired in beyond the notification te
 
 | Variable                 | Used In                                       |
 | -------------------------- | ---------------------------------------------- |
-| `CLERK_SECRET_KEY`         | `worker/` Clerk middleware (`@hono/clerk-auth`) |
+| `CLERK_SECRET_KEY`         | `worker/` Clerk middleware (`@clerk/hono`) |
 | `CLERK_PUBLISHABLE_KEY`    | `worker/` Clerk middleware, `src/` client-side Clerk components |
 | `CLERK_WEBHOOK_SIGNING_SECRET` | `../worker/routes/webhooks/organization-created.ts` (Svix signature verification — separate secret from `CLERK_SECRET_KEY`, per-endpoint from the Clerk Dashboard) |
 | `NEON_API_KEY`             | `../worker/routes/webhooks/organization-created.ts` (provisions a new tenant project per org via `@neon/sdk`) |
 | `NEON_ACCOUNT_ORG_ID`      | `worker/db/` — OUR Neon account's own org ID (unrelated to Clerk orgs — see `library-docs.md` → Neon), passed once to `createNeonClient()` |
 | `CONTROL_DATABASE_URL`     | `worker/db/control.ts` — the single, fixed connection to the shared control-plane project (org/subscription/payment tables) |
-| `TENANT_CONNECTION_ENCRYPTION_KEY` | `worker/db/` — encrypts/decrypts `tenant_projects.connection_string` at rest |
+| `TENANT_ENCRYPTION_KEY`    | `worker/lib/encryption.ts` — encrypts/decrypts `tenant_projects.connection_string` at rest (this is the actual binding name in `worker/types.ts`; an earlier draft called it `TENANT_CONNECTION_ENCRYPTION_KEY`) |
 | `PAYPAL_CLIENT_ID`         | `custom/web/payments/paypal-client.ts`         |
 | `PAYPAL_CLIENT_SECRET`     | `custom/web/payments/paypal-client.ts`         |
 | `PAYPAL_PLAN_ID`           | `custom/web/payments/paypal-client.ts`         |
@@ -187,11 +187,12 @@ Approved core dependencies for this project (see `package.json` for exact versio
 ### Web only (target design)
 
 - `hono` — API framework on Cloudflare Workers
-- `@hono/clerk-auth` — official Clerk session middleware for Hono (do not hand-roll JWT/JWKS verification)
-- `@clerk/backend` (pulled in by `@hono/clerk-auth`) — Clerk backend SDK, V8-isolate compatible
+- `@clerk/hono` — Clerk's official Hono session middleware (`clerkMiddleware`, `getAuth`, plus `@clerk/hono/webhooks`; do not hand-roll JWT/JWKS verification). Replaced the community `@hono/clerk-auth` package during feature 06's build.
+- `@clerk/backend` (pulled in by `@clerk/hono`) — Clerk backend SDK, V8-isolate compatible
 - `@neon/sdk` — official Neon Platform API client, used server-side (never client-side) to provision a Neon project per tenant on org creation (`createNeonClient().projects.createAndConnect()`) — this manages projects, it does not run accounting queries
 - `svix` — verifies Clerk webhook signatures on Workers (Clerk's own Next.js `verifyWebhook` helper doesn't apply here — see `library-docs.md` → Clerk)
-- A Postgres/Neon client compatible with the Workers runtime for actual query execution (e.g. `@neondatabase/serverless`) — confirm the exact package before adding, since not every Postgres driver works in a Workers isolate; this is separate from `@neon/sdk` above
+- `@neondatabase/serverless` — the confirmed Workers-compatible Postgres driver (installed as `@neondatabase/serverless` in `worker/package.json`, and aliased as `"pg": "npm:@neondatabase/serverless@^1.1.0"` in root `package.json` so Knex's `pg` dialect transparently gets it in the one-off scripts that build `DatabaseCore`; distinct from `@neon/sdk` above, which manages projects, not queries)
+- `@clerk/clerk-js` + `@clerk/ui` (root package) — Clerk's browser SDK and prebuilt components for the web client (`src/web/clerk.ts`, `src/pages/web/`)
 - `wrangler` (dev dependency) — Cloudflare Workers CLI/deploy tooling
 
 Do not install any other packages without updating this list first. Desktop's licensing/payment integrations (Keymint, ClickPesa) are intentionally dependency-light (direct REST calls via `node-fetch`) rather than adding heavier SDKs. The Web target's PayPal and OneSignal integrations should follow the same dependency-light pattern (direct REST calls) — do not add a PayPal or OneSignal SDK package unless a strong reason emerges, to keep both targets consistent and auditable.
