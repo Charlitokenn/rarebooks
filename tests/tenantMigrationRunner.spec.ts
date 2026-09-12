@@ -31,10 +31,18 @@ function createFakeDb(records: TenantProjectRecord[]): FakeDb {
     queries.push(sql);
 
     if (sql.startsWith('SELECT org_id, status, connection_string')) {
+      // Rows in the table's own snake_case shape, like the real
+      // tenant_projects table returns.
+      const asRows = () =>
+        records.map((r) => ({
+          org_id: r.orgId,
+          status: r.status,
+          connection_string: r.encryptedConnectionString,
+        }));
       if (sql.includes('WHERE org_id = ?')) {
-        return records.filter((r) => r.orgId === values[0]);
+        return asRows().filter((r) => r.org_id === values[0]);
       }
-      return records;
+      return asRows();
     }
 
     if (sql.startsWith('UPDATE tenant_projects')) {
@@ -138,6 +146,7 @@ test('--org limits the run to one tenant, and a missing org errors', async (t) =
     { orgId: 'org-a', includeProjectCreated: false, dryRun: false },
     {
       controlDb: db,
+      decrypt: async () => 'postgres://fake',
       migrateTenantProject: async (orgId) => {
         migrated.push(orgId);
       },
@@ -151,7 +160,7 @@ test('--org limits the run to one tenant, and a missing org errors', async (t) =
     await runTenantMigrations(
       secrets,
       { orgId: 'org-missing', includeProjectCreated: false, dryRun: false },
-      { controlDb: db, migrateTenantProject: async () => undefined }
+      { controlDb: db, decrypt: async () => 'postgres://fake', migrateTenantProject: async () => undefined }
     );
   } catch (e) {
     err = e;
@@ -177,6 +186,7 @@ test('one failing tenant does not abort the rollout, and failures land in the su
     {
       controlDb: db,
       log: () => undefined,
+      decrypt: async () => 'postgres://fake',
       migrateTenantProject: async (orgId) => {
         if (orgId === 'org-b') {
           throw new Error('simulated tenant failure');
@@ -207,7 +217,12 @@ test('the recovery flag migrates PROJECT_CREATED tenants and advances them to RE
   const summary = await runTenantMigrations(
     secrets,
     { includeProjectCreated: true, dryRun: false },
-    { controlDb: db, log: () => undefined, migrateTenantProject: async () => undefined }
+    {
+      controlDb: db,
+      log: () => undefined,
+      decrypt: async () => 'postgres://fake',
+      migrateTenantProject: async () => undefined,
+    }
   );
 
   t.equal(summary.migrated, 1);

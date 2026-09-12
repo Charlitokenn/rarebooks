@@ -19,6 +19,7 @@
     "postuninstall": "electron-rebuild",
     "script:translate": "scripts/runner.sh scripts/generateTranslations.ts",
     "script:profile": "scripts/profile.sh",
+    "migrate:tenants": "scripts/migrate-tenants.sh",
     "test": "scripts/test.sh",
     "uitest": "node uitest/index.mjs | tap-spec",
     "lint": "eslint . --ext ts,vue",
