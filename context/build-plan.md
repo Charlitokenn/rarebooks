@@ -149,7 +149,7 @@ Apply the accounting schema to freshly-provisioned tenant projects, and route do
 - Verify `models/**`/`reports/**` run correctly against `fyo.db` backed by a tenant's Neon project, not just SQLite (may surface Postgres-vs-SQLite query differences to fix)
 - A migration runner utility for rolling out future schema changes across every row in `tenant_projects`, not just one project
 
-**Status:** Code-complete on the `webapp` branch (2026-09), including the one-off tenant migration runner (`yarn migrate:tenants`, invocation decided 2026-09-12); pending live Neon verification. Depends on 06.
+**Status:** Code-complete on the `webapp` branch (2026-09), including the one-off tenant migration runner (`npm run migrate:tenants`, invocation decided 2026-09-12); pending live Neon verification. Depends on 06.
 
 ---
 

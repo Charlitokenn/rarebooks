@@ -8,6 +8,6 @@
 #
 # Usage and flags: npm run migrate:tenants -- --help
 
-export TS_NODE_COMPILER_OPTIONS='{"module":"commonjs"}'
+export TS_NODE_COMPILER_OPTIONS='{"module":"commonjs","moduleResolution":"node"}'
 exec node --require ts-node/register --require tsconfig-paths/register \
   scripts/migrate-tenants.ts "$@"
