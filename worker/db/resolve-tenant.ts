@@ -1,9 +1,9 @@
 /**
  * Resolves the signed-in session's org to ITS OWN Neon project connection
  * string. This is the only place a tenant's connection string is decrypted,
- * and it happens in memory, per request, from a short-TTL cache keyed on
- * org_id — never cached across different orgs, never logged, never returned
- * to the client.
+ * and it happens in memory, per request. The short-TTL cache keyed on org_id
+ * retains only the encrypted value — plaintext is never cached, logged, or
+ * returned to the client.
  *
  * Every later feature that touches tenant data (0002 onward) calls this
  * first. There is no `org_id` column anywhere in a tenant project: the
@@ -37,7 +37,7 @@ export type TenantStatus =
   | 'FAILED';
 
 interface CacheEntry {
-  connectionString: string | null;
+  encryptedConnectionString: string | null;
   status: TenantStatus;
   expiresAt: number;
 }
@@ -62,10 +62,13 @@ export async function resolveTenantConnectionString(
 ): Promise<string> {
   const cached = cache.get(orgId);
   if (cached && cached.expiresAt > Date.now()) {
-    if (cached.status !== 'READY' || !cached.connectionString) {
+    if (cached.status !== 'READY' || !cached.encryptedConnectionString) {
       throw new TenantNotReadyError(cached.status);
     }
-    return cached.connectionString;
+    return decrypt(cached.encryptedConnectionString, env.TENANT_ENCRYPTION_KEY);
+  }
+  if (cached) {
+    cache.delete(orgId);
   }
 
   const controlDb = getControlDb(env);
@@ -76,22 +79,17 @@ export async function resolveTenantConnectionString(
 
   if (row.status !== 'READY') {
     cache.set(orgId, {
-      connectionString: null,
+      encryptedConnectionString: null,
       status: row.status,
       expiresAt: Date.now() + CACHE_TTL_MS,
     });
     throw new TenantNotReadyError(row.status);
   }
 
-  const connectionString = await decrypt(
-    row.connection_string,
-    env.TENANT_ENCRYPTION_KEY
-  );
-
   cache.set(orgId, {
-    connectionString,
+    encryptedConnectionString: row.connection_string,
     status: row.status,
     expiresAt: Date.now() + CACHE_TTL_MS,
   });
-  return connectionString;
+  return decrypt(row.connection_string, env.TENANT_ENCRYPTION_KEY);
 }

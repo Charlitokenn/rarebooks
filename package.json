@@ -22,7 +22,7 @@
     "test": "scripts/test.sh",
     "uitest": "node uitest/index.mjs | tap-spec",
     "lint": "eslint . --ext ts,vue",
-    "format": "prettier --write"
+    "format": "prettier --write ."
   },
   "dependencies": {
     "@clerk/clerk-js": "^6.31.0",
