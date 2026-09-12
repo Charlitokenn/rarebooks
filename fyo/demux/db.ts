@@ -62,13 +62,13 @@ export class DatabaseDemux extends DatabaseDemuxBase {
 
   async getSchemaMap(): Promise<SchemaMap> {
     if (!this.#isElectron) {
-      // Applying/serving the tenant schema is feature 0002 (tenant schema
-      // & data layer), not this feature — see docs/specs/0002. This
-      // feature (0001) only needs the fetch plumbing (#fetchBackend) to
-      // exist and work, proven by getDashboardStatus() below.
-      throw new NotImplemented(
-        'getSchemaMap on web is implemented by feature 0002 (tenant schema & data layer)'
-      );
+      // worker/routes/db.ts (feature 0002) gates this on tenant readiness
+      // the same way every other doc route does, so a tenant that is not
+      // READY surfaces as the usual HTTP{status} DatabaseError here rather
+      // than a schema for a database that has nothing applied yet.
+      return (await this.#handleDBCall(async () => {
+        return await this.#fetchBackend('/api/db/schema');
+      })) as SchemaMap;
     }
 
     return (await this.#handleDBCall(async () => {
@@ -121,11 +121,14 @@ export class DatabaseDemux extends DatabaseDemuxBase {
 
   async call(method: DatabaseMethod, ...args: unknown[]): Promise<unknown> {
     if (!this.#isElectron) {
-      // Generic doc CRUD (worker/routes/doc/*) is feature 0002 — see
-      // docs/specs/0002-tenant-schema-data-layer.md.
-      throw new NotImplemented(
-        `call('${method}') on web is implemented by feature 0002 (tenant schema & data layer)`
-      );
+      // worker/routes/db.ts (feature 0002): POST /api/db/call, mirroring
+      // Desktop's DB_CALL IPC action onto the same DatabaseCore method set.
+      return await this.#handleDBCall(async () => {
+        return await this.#fetchBackend('/api/db/call', {
+          method: 'POST',
+          body: JSON.stringify({ method, args }),
+        });
+      });
     }
 
     return await this.#handleDBCall(async () => {
@@ -135,9 +138,14 @@ export class DatabaseDemux extends DatabaseDemuxBase {
 
   async callBespoke(method: string, ...args: unknown[]): Promise<unknown> {
     if (!this.#isElectron) {
-      throw new NotImplemented(
-        `callBespoke('${method}') on web is implemented by feature 0002 (tenant schema & data layer)`
-      );
+      // worker/routes/db.ts (feature 0002): POST /api/db/bespoke, mirroring
+      // Desktop's DB_BESPOKE IPC action onto the same BespokeQueries set.
+      return await this.#handleDBCall(async () => {
+        return await this.#fetchBackend('/api/db/bespoke', {
+          method: 'POST',
+          body: JSON.stringify({ method, args }),
+        });
+      });
     }
 
     return await this.#handleDBCall(async () => {
