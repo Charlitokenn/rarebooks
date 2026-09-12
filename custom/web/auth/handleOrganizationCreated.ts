@@ -15,14 +15,16 @@
  */
 import {
   claimTenantProject,
+  claimTenantProjectMigration,
   type ControlDb,
   failTenantProjectClaim,
   getControlDb,
   insertOrganization,
   insertTenantProject,
+  releaseTenantProjectMigration,
   setTenantProjectStatus,
 } from '../../../worker/db/control';
-import { encrypt } from '../../../worker/lib/encryption';
+import { decrypt, encrypt } from '../../../worker/lib/encryption';
 import { applyTenantSchema } from './applyTenantSchema';
 
 // Deliberately NOT importing @clerk/backend's OrganizationJSON here: this
@@ -59,7 +61,8 @@ export async function handleOrganizationCreated(
   event: ClerkOrganizationCreatedEvent,
   env: HandleOrgCreatedEnv,
   neonClient: NeonProvisioningClient,
-  controlDb: ControlDb = getControlDb(env)
+  controlDb: ControlDb = getControlDb(env),
+  applySchema: typeof applyTenantSchema = applyTenantSchema
 ): Promise<void> {
   const orgId = event.data.id;
 
@@ -68,55 +71,63 @@ export async function handleOrganizationCreated(
 
   const claimId = crypto.randomUUID();
   const claimed = await claimTenantProject(controlDb, { orgId, claimId });
+  let connectionString: string;
   if (!claimed) {
-    return;
+    const encryptedConnectionString = await claimTenantProjectMigration(
+      controlDb,
+      { orgId, claimId }
+    );
+    if (!encryptedConnectionString) {
+      return;
+    }
+    connectionString = await decrypt(
+      encryptedConnectionString,
+      env.TENANT_ENCRYPTION_KEY
+    );
+  } else {
+    try {
+      // 2. Provision a dedicated, isolated Neon project for this org.
+      //    This is a real network call to Neon's API — see Follow-up in
+      //    docs/specs/0001 re: confirming the exact Workers-compatible
+      //    client package before this runs against a live Neon account.
+      const provisioned = await neonClient.createAndConnect({
+        name: `rarebooks-tenant-${orgId}`,
+      });
+      connectionString = provisioned.connectionString;
+
+      // 3. Encrypt the connection string before it ever touches storage.
+      const encryptedConnectionString = await encrypt(
+        connectionString,
+        env.TENANT_ENCRYPTION_KEY
+      );
+
+      const completed = await insertTenantProject(controlDb, {
+        orgId,
+        claimId,
+        neonProjectId: provisioned.neonProjectId,
+        encryptedConnectionString,
+        region: provisioned.region,
+      });
+      if (!completed) {
+        throw new Error('Tenant provisioning claim was lost before completion');
+      }
+    } catch (err) {
+      await failTenantProjectClaim(controlDb, { orgId, claimId });
+      throw err;
+    }
   }
 
   try {
-    // 2. Provision a dedicated, isolated Neon project for this org.
-    //    This is a real network call to Neon's API — see Follow-up in
-    //    docs/specs/0001 re: confirming the exact Workers-compatible
-    //    client package before this runs against a live Neon account.
-    const provisioned = await neonClient.createAndConnect({
-      name: `rarebooks-tenant-${orgId}`,
-    });
+    await applySchema(connectionString);
+  } catch (migrateErr) {
+    await setTenantProjectStatus(controlDb, orgId, 'FAILED');
+    throw migrateErr;
+  }
 
-    // 3. Encrypt the connection string before it ever touches storage.
-    const encryptedConnectionString = await encrypt(
-      provisioned.connectionString,
-      env.TENANT_ENCRYPTION_KEY
-    );
-
-    const completed = await insertTenantProject(controlDb, {
-      orgId,
-      claimId,
-      neonProjectId: provisioned.neonProjectId,
-      encryptedConnectionString,
-      region: provisioned.region,
-    });
-    if (!completed) {
-      throw new Error('Tenant provisioning claim was lost before completion');
-    }
-
-    // 4. Apply the accounting schema and advance to READY. The claim is
-    //    already released at this point (insertTenantProject cleared it on
-    //    success), so a failure here can't use failTenantProjectClaim's
-    //    claim compare-and-swap — it would never match and the tenant
-    //    would be stuck at PROJECT_CREATED with no failure recorded.
-    //    setTenantProjectStatus is the plain, unconditional flip instead.
-    try {
-      await applyTenantSchema(provisioned.connectionString);
-      await setTenantProjectStatus(controlDb, orgId, 'READY');
-    } catch (migrateErr) {
-      await setTenantProjectStatus(controlDb, orgId, 'FAILED');
-      // Re-thrown below reaches the outer catch's failTenantProjectClaim
-      // too; that's a harmless no-op by then (status is no longer
-      // PROVISIONING), and lets the route's existing FAILED-status check
-      // decide the HTTP response the same way for either failure point.
-      throw migrateErr;
-    }
-  } catch (err) {
-    await failTenantProjectClaim(controlDb, { orgId, claimId });
-    throw err;
+  try {
+    await setTenantProjectStatus(controlDb, orgId, 'READY');
+  } catch (statusErr) {
+    await releaseTenantProjectMigration(controlDb, { orgId, claimId });
+    throw statusErr;
   }
 }

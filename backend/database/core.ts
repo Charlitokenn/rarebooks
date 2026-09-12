@@ -169,9 +169,7 @@ export default class DatabaseCore extends DatabaseBase {
       // Second pass: add every Link field's foreign key now that every
       // table in this batch exists (see #runCreateTableQuery).
       for (const schemaName of create) {
-        const linkFields = (
-          this.schemaMap[schemaName]?.fields ?? []
-        ).filter(
+        const linkFields = (this.schemaMap[schemaName]?.fields ?? []).filter(
           (f) => f.fieldtype === FieldTypeEnum.Link && f.target
         );
         if (linkFields.length) {
@@ -481,18 +479,26 @@ export default class DatabaseCore extends DatabaseBase {
 
   async truncate(tableNames?: string[]) {
     if (tableNames === undefined) {
-      tableNames = this.#isSqlite
-        ? (
-            (await this.knex!.raw(`
+      if (this.#isSqlite) {
+        tableNames = (
+          (await this.knex!.raw(`
         select name from sqlite_schema
         where type='table'
         and name not like 'sqlite_%'`)) as { name: string }[]
-          ).map((i) => i.name)
-        : (
-            (await this.knex!('information_schema.tables')
-              .where('table_schema', 'public')
-              .select('table_name')) as { table_name: string }[]
-          ).map((i) => i.table_name);
+        ).map((i) => i.name);
+      } else {
+        const publicTableNames = (
+          (await this.knex!('information_schema.tables')
+            .where('table_schema', 'public')
+            .andWhere('table_type', 'BASE TABLE')
+            .select('table_name')) as { table_name: string }[]
+        ).map((i) => `public.${i.table_name}`);
+
+        if (publicTableNames.length) {
+          await this.knex!.raw('TRUNCATE TABLE ?? CASCADE', [publicTableNames]);
+        }
+        return;
+      }
     }
 
     for (const name of tableNames) {
@@ -729,7 +735,7 @@ export default class DatabaseCore extends DatabaseBase {
       }
 
       for (const field of diff.added) {
-        this.#buildColumnForTable(table, field);
+        this.#buildColumnForTable(table, field, { skipForeignKey: true });
       }
     });
 

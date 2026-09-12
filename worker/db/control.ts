@@ -64,10 +64,40 @@ export async function insertTenantProject(
       connection_string = ${row.encryptedConnectionString},
       region = ${row.region},
       status = 'PROJECT_CREATED',
-      provisioning_claim_id = NULL
+      provisioning_claim_id = ${row.claimId}
     WHERE org_id = ${row.orgId}
       AND status = 'PROVISIONING'
       AND provisioning_claim_id = ${row.claimId}
+    RETURNING org_id
+  `) as unknown as Array<{ org_id: string }>;
+  return rows.length === 1;
+}
+
+export async function claimTenantProjectMigration(
+  db: ControlDb,
+  claim: { orgId: string; claimId: string }
+): Promise<string | null> {
+  const rows = (await db`
+    UPDATE tenant_projects
+    SET provisioning_claim_id = ${claim.claimId}
+    WHERE org_id = ${claim.orgId}
+      AND status = 'PROJECT_CREATED'
+      AND provisioning_claim_id IS NULL
+    RETURNING connection_string
+  `) as unknown as Array<{ connection_string: string }>;
+  return rows[0]?.connection_string ?? null;
+}
+
+export async function releaseTenantProjectMigration(
+  db: ControlDb,
+  claim: { orgId: string; claimId: string }
+): Promise<boolean> {
+  const rows = (await db`
+    UPDATE tenant_projects
+    SET provisioning_claim_id = NULL
+    WHERE org_id = ${claim.orgId}
+      AND status = 'PROJECT_CREATED'
+      AND provisioning_claim_id = ${claim.claimId}
     RETURNING org_id
   `) as unknown as Array<{ org_id: string }>;
   return rows.length === 1;
@@ -120,7 +150,9 @@ export async function setTenantProjectStatus(
   status: TenantProjectRow['status']
 ): Promise<void> {
   await db`
-    UPDATE tenant_projects SET status = ${status} WHERE org_id = ${orgId}
+    UPDATE tenant_projects
+    SET status = ${status}, provisioning_claim_id = NULL
+    WHERE org_id = ${orgId}
   `;
 }
 

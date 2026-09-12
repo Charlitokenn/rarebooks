@@ -12,7 +12,7 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noEmit": true,
-    "baseUrl": "../../../../Downloads/feature-07-partial",
+    "baseUrl": "..",
     "paths": {
       "src/*": ["src/*"],
       "schemas/*": ["schemas/*"],
