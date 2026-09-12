@@ -9,10 +9,10 @@
   "scripts": {
     "dev": "node build/scripts/dev.mjs",
     "dev:web": "vite --config vite.config.web.ts",
-    "dev:web:full": "concurrently \"npm run dev:web\" \"npm --prefix ../../../Downloads/feature-07-partial/worker run dev\"",
+    "dev:web:full": "concurrently \"npm run dev:web\" \"npm --prefix worker run dev\"",
     "build": "node build/scripts/build.mjs",
     "build:web": "vite build --config vite.config.web.ts",
-    "deploy:web": "npm run build:web && npm --prefix ../../../Downloads/feature-07-partial/worker run deploy",
+    "deploy:web": "npm run build:web && npm --prefix worker run deploy",
     "build:msix": "electron-builder --win msix --x64",
     "release": "scripts/publish-mac-arm.sh",
     "postinstall": "electron-rebuild",
@@ -21,8 +21,8 @@
     "script:profile": "scripts/profile.sh",
     "test": "scripts/test.sh",
     "uitest": "node uitest/index.mjs | tap-spec",
-    "lint": "eslint ../../../Downloads/files --ext ts,vue",
-    "format": "prettier --write ../../../Downloads/files"
+    "lint": "eslint . --ext ts,vue",
+    "format": "prettier --write"
   },
   "dependencies": {
     "@clerk/clerk-js": "^6.31.0",
