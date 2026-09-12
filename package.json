@@ -20,6 +20,7 @@
     "script:translate": "scripts/runner.sh scripts/generateTranslations.ts",
     "script:profile": "scripts/profile.sh",
     "migrate:tenants": "scripts/migrate-tenants.sh",
+    "seed:subscription": "scripts/seed-subscription.sh",
     "test": "scripts/test.sh",
     "uitest": "node uitest/index.mjs | tap-spec",
     "lint": "eslint . --ext ts,vue",

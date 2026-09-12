@@ -9,18 +9,26 @@
  * custom/web/db/tenantDatabase.ts, matching how organization-created.ts
  * stays thin and delegates to custom/web/auth/.
  *
- * Every route here runs behind requireOrgSession (verified Clerk session,
- * org_id from the session only, never a client supplied value) and then
+ * Every route here runs behind one `dbRoute.use(...)` registered above the
+ * route definitions (spec 0003, AC-3): requireOrgSession (verified Clerk
+ * session, org_id from the session only, never a client supplied value) and
+ * requireActiveSubscription (the org's subscription must be ACTIVE, checked
+ * against the control plane before the tenant connection is resolved). Hono
+ * only runs `use` middleware for routes registered after it, so routes must
+ * NOT gain their own inline session arguments back — adding a route below
+ * the `use` line is what gates it. After the gate, each route calls
  * resolveTenantConnectionString, which throws TenantNotReadyError for any
  * tenant not yet READY.
  *
- * Spec: docs/specs/0002-tenant-schema-data-layer.md (AC-2, AC-3)
+ * Spec: docs/specs/0002-tenant-schema-data-layer.md (AC-2, AC-3),
+ * docs/specs/0003-subscription-gating-seat-sync.md (AC-3)
  */
 import { Hono } from 'hono';
 import {
   requireOrgSession,
   type AuthedVariables,
 } from '../middleware/clerk-auth';
+import { requireActiveSubscription } from '../middleware/subscription-gate';
 import {
   resolveTenantConnectionString,
   TenantNotReadyError,
@@ -38,6 +46,8 @@ export const dbRoute = new Hono<{
   Variables: AuthedVariables;
 }>();
 
+dbRoute.use(requireOrgSession, requireActiveSubscription);
+
 interface CallBody {
   method: string;
   args?: unknown[];
@@ -53,7 +63,7 @@ function isCallBody(value: unknown): value is CallBody {
   );
 }
 
-dbRoute.get('/schema', requireOrgSession, async (c) => {
+dbRoute.get('/schema', async (c) => {
   const orgId = c.get('orgId');
   try {
     // Resolving still gates on tenant readiness even though the schema
@@ -72,7 +82,7 @@ dbRoute.get('/schema', requireOrgSession, async (c) => {
   return c.json(getTenantSchemaMap());
 });
 
-dbRoute.post('/call', requireOrgSession, async (c) => {
+dbRoute.post('/call', async (c) => {
   const orgId = c.get('orgId');
   const body: unknown = await c.req.json().catch(() => null);
   if (!isCallBody(body)) {
@@ -113,7 +123,7 @@ dbRoute.post('/call', requireOrgSession, async (c) => {
   }
 });
 
-dbRoute.post('/bespoke', requireOrgSession, async (c) => {
+dbRoute.post('/bespoke', async (c) => {
   const orgId = c.get('orgId');
   const body: unknown = await c.req.json().catch(() => null);
   if (!isCallBody(body)) {

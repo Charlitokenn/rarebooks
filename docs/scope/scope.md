@@ -91,17 +91,19 @@ Spec updated 2026-09-06, cross-checked against the actual `backend/database/core
 Implement access control, the thing that replaces Keymint on Web: subscription status gating plus Clerk's native per org seat cap.
 **Done when:** a request against tenant data is blocked before the tenant connection is even resolved when the org's subscription status is not `ACTIVE`, and `maxAllowedMemberships` on Clerk is kept in sync with the org's plan tier on every activation, plan change, and cancellation.
 - [x] Design it (spec): `/architect subscription gating & seat sync`
-  Spec [0003](../specs/0003-subscription-gating-seat-sync.md), updated in place 2026-09-12 after a cross-check against the actual `worker/` code (caught: the Hono `use`-after-inline-middleware ordering bug, and that the seed script physically cannot import the `worker/` package, so shared logic goes in `custom/web/billing/`).
-- [ ] Build it: `/develop subscription gating & seat sync`
-  - [ ] Shared core in `custom/web/billing/` (status read, seat sync, wire types), satisfies AC-5, AC-9
-  - [ ] Gate middleware + `dbRoute.use` remount + worker-side tests, satisfies AC-1, AC-2, AC-3
-  - [ ] `npm run seed:subscription` operator CLI (fixed upsert, required `--seats`), satisfies AC-7
-  - [ ] `GET /api/subscription/status` + client 402 redirect + `/billing` prompt page, satisfies AC-4, AC-8
+  Spec [0003](../specs/0003-subscription-gating-seat-sync/index.md), updated in place 2026-09-12 after a cross-check against the actual `worker/` code (caught: the Hono `use`-after-inline-middleware ordering bug, and that the seed script physically cannot import the `worker/` package, so shared logic goes in `custom/web/billing/`).
+- [x] Build it: `/develop subscription gating & seat sync`
+  - [x] Shared core in `custom/web/billing/` (status read, seat sync, wire types), satisfies AC-5, AC-9
+  - [x] Gate middleware + `dbRoute.use` remount + worker-side tests, satisfies AC-1, AC-2, AC-3
+  - [x] `npm run seed:subscription` operator CLI (fixed upsert, required `--seats`), satisfies AC-7
+  - [x] `GET /api/subscription/status` + client 402 redirect + `/billing` prompt page, satisfies AC-4, AC-8
   Depends on 07. Must never import or reference `custom/licensing/` (Keymint) anywhere in this phase.
+  Built 2026-09-12. The spec's open runner question settled on vitest: `npm --prefix worker test` (16 gate/status tests, mocked Clerk auth + control plane + tenant resolver). Root tape suite covers the shared core (25 assertions, `npm test -- custom/web/billing/tests/billing.spec.ts`). Note: the live staging control plane predates `worker/db/schema.sql`'s current `subscriptions` definition — it is missing the `UNIQUE (org_id)` constraint the seed upsert's `ON CONFLICT` needs, and its status CHECK lacks `SUSPENDED`; the operator must apply those two ALTERs before first use (DDL against shared infra was left as a human call).
 - [ ] Verify it: `/check verify subscription gating & seat sync`
 - [ ] Test it: `/test subscription gating & seat sync`
 - [ ] Review it: `/check review subscription gating & seat sync`
 - [ ] Document it: `/document subscription gating & seat sync`
+  Spec 0003. code in `custom/web/billing/`, `worker/middleware/subscription-gate.ts`, `worker/routes/subscription-status.ts`, `worker/routes/db.ts`, `worker/index.ts`, `scripts/seed-subscription.ts`, `src/pages/web/Billing.vue`, `src/web/subscription.ts`, `src/web/router.ts`, `fyo/demux/db.ts`, `fyo/utils/errors.ts`, `utils/ipc/types.ts`, `rendererWeb.ts`
 
 ### 09. PayPal subscriptions (non Tanzania payments) · needs a decision
 Recurring subscription billing for tenants outside Tanzania.
