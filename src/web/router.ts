@@ -13,6 +13,7 @@ import SignUp from 'src/pages/web/SignUp.vue';
 import CreateOrganization from 'src/pages/web/CreateOrganization.vue';
 import Dashboard from 'src/pages/web/Dashboard.vue';
 import Billing from 'src/pages/web/Billing.vue';
+import Settings from 'src/pages/web/Settings.vue';
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/dashboard' },
@@ -21,6 +22,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/create-organization', component: CreateOrganization },
   { path: '/dashboard', component: Dashboard },
   { path: '/billing', component: Billing },
+  { path: '/settings', component: Settings },
 ];
 
 const router = createRouter({

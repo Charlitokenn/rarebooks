@@ -22,6 +22,7 @@
     "migrate:tenants": "scripts/migrate-tenants.sh",
     "seed:subscription": "scripts/seed-subscription.sh",
     "test": "scripts/test.sh",
+    "check:ntfy": "node scripts/ntfy-web-publish-check.mjs",
     "uitest": "node uitest/index.mjs | tap-spec",
     "lint": "eslint . --ext ts,vue",
     "format": "prettier --write ."

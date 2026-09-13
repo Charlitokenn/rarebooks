@@ -2,20 +2,13 @@
 
 **Date**: 2026-09-03
 **Updated**: 2026-09-12 — decision reversed from the drafted OneSignal port to keeping ntfy on Web (Charles's call). File renamed from `0006-onesignal-notifications.md`; the port design it recorded is superseded, not extended.
-**Status**: Proposed
+**Status**: In Progress
 
 ## Summary
 
 The Web target does not switch notification providers. Restock and payment notifications on Web use the same ntfy delivery path Desktop already uses — the same `src/utils/ntfy.ts`, the same model-layer triggers, and the same `POSSettings`-based topic configuration. What remains for this feature is verification that the shared path works in the web renderer, not a port.
 
-## Context
-
-Desktop fires notifications through ntfy when inventory drops low, when a sale is submitted, and at POS shift close, already covered by `restockNotification.spec.ts`, `paymentMethodNotification.spec.ts`, and `ntfyNotification.spec.ts`. An earlier draft of this spec (2026-09-03) planned to swap Web's delivery to OneSignal push: `include_aliases.external_id` fan-out to Clerk member user IDs, `ONESIGNAL_APP_ID`/`ONESIGNAL_API_KEY` Worker secrets, and a `custom/web/notifications/` module. That plan is withdrawn, for two concrete reasons found while re-examining the actual code:
-
-1. On Web the `fyo` model layer — where the restock and payment triggers live (`SalesInvoice.ts`, `POSClosingShift.ts`) — runs in the browser renderer (`rendererWeb.ts`), the same place `sendNtfyNotification` is already invoked on Desktop. The triggers and the delivery function are shared code, not Desktop code.
-2. ntfy publishing is an unauthenticated `POST https://ntfy.sh/<topic>` with plain custom headers, and a live CORS preflight against ntfy.sh (2026-09-12) returned `access-control-allow-origin: *`, POST in `access-control-allow-methods`, and `access-control-allow-headers: *` — so a browser-origin publish from the hosted app reaches ntfy.sh directly, with no Worker proxy hop.
-
-Keeping ntfy therefore delivers identical notification behavior on both targets with zero new notification code, no vendor account, and no Worker secrets.
+Decision record (Context, Options considered, Rationale) lives in [rationale.md](rationale.md).
 
 ## Requirements
 
@@ -29,19 +22,9 @@ Keeping ntfy therefore delivers identical notification behavior on both targets 
 - **AC-4**: The topic is treated as a password-equivalent secret (the public server's own model: "there is no sign-up, the topic is essentially a password"): unguessable per organization, never logged or displayed outside its own Settings field.
 - **AC-5**: The three existing notification specs continue to pass unmodified on the web build configuration; no web-only delivery duplicate is added to keep them passing.
 
-## Options considered
-
-- **Keep ntfy (chosen)** — zero new code, zero new secrets, exact behavioral parity with Desktop. ntfy already reaches phones through the ntfy app and web clients with no integration work on our side.
-- **OneSignal push port (the withdrawn 2026-09-03 plan)** — adds a vendor account, two Worker secrets, and a per-org Clerk-membership fan-out. That fan-out exists only because OneSignal targets per-user push registrations; with ntfy the delivery target is a topic the organization owns, so the entire targeting problem disappears. Revisit only if first-party browser push (a permission prompt, notifications without any external app) becomes a product requirement.
-- **Worker-side proxy of the ntfy publish** — considered and rejected: it centralizes nothing that needs centralizing (the trigger already runs client-side on both targets), adds a route and its tenant-resolution overhead, and makes every tenant's publish traffic egress from a handful of Cloudflare IPs against ntfy.sh's per-IP rate limits, which is strictly worse than today's per-user browser egress.
-
 ## Decision
 
 **Chosen option**: Web keeps ntfy. The shared `src/utils/ntfy.ts` delivery path and the existing model-layer triggers are reused unchanged on both targets; feature 11 shrinks from a delivery port to a verification slice (Settings reachable from the web shell, browser-origin publish observed to work).
-
-## Rationale
-
-Reusing the existing path is the smallest change that satisfies the requirement — smaller than the OneSignal plan it replaces, which had to design and test a whole fan-out mechanism (resolving an org to its current Clerk member user IDs, guarding `include_aliases` against incompatible targeting parameters) that the ntfy topic model simply doesn't have. The user-visible behavior is already correct and already tested; the only real unknown was whether a hosted-origin browser could publish, which was checked live rather than assumed.
 
 ## Feature design
 
@@ -76,8 +59,10 @@ Reusing the existing path is the smallest change that satisfies the requirement 
 ## Build plan
 
 1. When the web app shell exposes the shared Settings surface (rides along with feature 07+ work; no separate notification module), confirm both `POSSettings` fields are reachable and persist per tenant. Satisfies **AC-2**.
-2. From a deployed (or `wrangler dev`-served) web origin, run the browser-origin publish check against a real test topic and observe delivery; record the result here or in the tracker so AC-3 is closed on evidence, not on the 2026-09-12 preflight alone. Satisfies **AC-3, AC-4**.
+   _Built 2026-09-13: `src/web/boot.ts` (web fyo boot against the tenant DB) + `src/pages/web/Settings.vue` mounted at `/settings`. Live per-tenant round trip pending a test account against `wrangler dev`; see scope feature 11._
+2. From a deployed (or `wrangler dev`-served) web origin, run the browser-origin publish check against a real test topic and observe delivery; record the result here or in the tracker so AC-3 is closed on evidence, not on the 2026-09-12 preflight alone. Satisfies **AC-3, AC-4**. [x] 2026-09-13: `npm run check:ntfy` (`scripts/ntfy-web-publish-check.mjs`, Playwright Chromium) published from the deployed `https://app.rarebooks.cc` origin to a fresh random topic `rarebooks-web-check-…` (HTTP 200) and observed the exact message in the topic's `/json?poll=1` event stream. AC-4 honored: topic random per run, printed only in the operator's terminal.
 3. Re-run the three existing notification specs under the web build configuration. Satisfies **AC-1, AC-5**.
+   _Re-run 2026-09-13 (specs unmodified): restock 8/8 pass; ntfyNotification and paymentMethodNotification each fail one assertion for a reason pre-existing at HEAD, unrelated to this feature: the first a stub-restoration race (passes with the fire-and-forget notification settled), the second asserts a `Receiving Account:` line `sendPOSNotification` has never produced (it says `Paid Via:`). To fix via /debug (test race) and /architect (spec wording) — not by touching delivery code, which AC-1 forbids._
 
 ## Consequences
 

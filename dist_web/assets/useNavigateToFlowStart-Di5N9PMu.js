@@ -1,0 +1,1 @@
+import{u as r}from"./RouteContext-Db5iCvKh.js";const n=()=>{const t=r();return{navigateToFlowStart:async()=>{const a=t.indexPath;if(a!==t.currentPath)return t.navigate(a);if(t.urlStateParam?.path)return t.navigate("/"+t.basePath+t.urlStateParam?.startPath)}}};export{n as u};

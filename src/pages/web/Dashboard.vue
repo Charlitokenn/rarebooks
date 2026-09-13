@@ -108,6 +108,11 @@ onUnmounted(() => {
     <div v-else-if="status === 'PROJECT_CREATED' || status === 'READY'">
       <!-- Empty shell — feature 0002 fills this in with real accounting data. -->
       <h1>Welcome to RareBooks</h1>
+      <!-- Settings is the first tenant-data surface on Web (spec 0006
+           AC-2); shown whenever the tenant is ready enough to try. -->
+      <p>
+        <a href="/settings" class="underline">Settings</a>
+      </p>
     </div>
   </div>
 </template>

@@ -21,7 +21,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 08 | Subscription gating & seat sync | Phase 4: Web Migration | in-progress |
 | 09 | PayPal subscriptions (non Tanzania payments) | Phase 4: Web Migration | planned |
 | 10 | Lipa Namba manual payments (Tanzania payments) & admin review | Phase 4: Web Migration | planned |
-| 11 | Web notifications (ntfy) | Phase 4: Web Migration | planned |
+| 11 | Web notifications (ntfy) | Phase 4: Web Migration | in-progress |
 | 12 | Deploy & cutover readiness | Phase 4: Web Migration | planned |
 | 13 | Legal & compliance pages | Phase 4: Web Migration (addition) | planned |
 
@@ -117,15 +117,17 @@ Manual mobile money payment instructions for Tanzania tenants, with no live paym
 - [ ] Design it (spec): `/architect lipa namba manual payments`
   Depends on 08.
 
-### 11. Web notifications (ntfy) · designed
+### 11. Web notifications (ntfy) · in-progress
 Web keeps ntfy — no provider switch. The restock/payment triggers and `src/utils/ntfy.ts` delivery are shared code the web renderer already runs; a drafted OneSignal port was reversed on 2026-09-12 before any of it was built. What's left is a verification slice, not a port.
 **Done when:** a restock or payment event submitted in the hosted web app reaches the org's ntfy subscribers via the same shared code path Desktop uses — Settings fields editable per tenant on Web, a browser-origin publish observed arriving from the deployed origin, and the three existing notification specs passing unmodified on the web build.
-- [x] Design it (spec): spec [0006](../specs/0006-ntfy-notifications.md), rewritten in place 2026-09-12 from the OneSignal port to keeping ntfy (Charles's decision)
+- [x] Design it (spec): spec [0006](../specs/0006-ntfy-notifications/index.md), rewritten in place 2026-09-12 from the OneSignal port to keeping ntfy (Charles's decision)
 - [ ] Build it: `/develop web notifications`
-  - [ ] `POSSettings.enableMobileNotifications` / `messageChannel` reachable and persisting per tenant through the web Settings surface, satisfies AC-2
-  - [ ] Browser-origin publish observed arriving at a subscribed ntfy client from the deployed web origin (the 2026-09-12 CORS preflight pass is necessary, not sufficient), satisfies AC-3, AC-4
+  - [ ] `POSSettings.enableMobileNotifications` / `messageChannel` reachable and persisting per tenant through the web Settings surface, satisfies AC-2 (code-complete 2026-09-13, see note below; the live per-tenant confirm is the remaining half)
+  - [x] Browser-origin publish observed arriving at a subscribed ntfy client from the deployed web origin (the 2026-09-12 CORS preflight pass is necessary, not sufficient), satisfies AC-3, AC-4
   - [ ] `restockNotification.spec.ts`, `paymentMethodNotification.spec.ts`, `ntfyNotification.spec.ts` re-run on the web build configuration, satisfies AC-1, AC-5
   Depends on 07 (needs the tenant Settings round trip). No `custom/web/notifications/` module, no Worker route, no Worker secret — building any of those would be re-litigating spec 0006.
+  Built 2026-09-13. AC-2: `src/web/boot.ts` boots the web `fyo` against the tenant DB (schema fetch + model registration + the two Singles), `src/pages/web/Settings.vue` mounted at `/settings` (linked from Dashboard); save goes through the shared `Doc.sync()` → demux → `POST /api/db/call` round trip feature 0002 built. Not yet confirmed: the same round trip observed from a live signed-in tenant session (needs a Clerk test account; the page itself renders and redirects to Clerk correctly in a headless check). AC-3/AC-4: `npm run check:ntfy` (Playwright Chromium, `scripts/ntfy-web-publish-check.mjs`) published from the deployed `app.rarebooks.cc` origin to a fresh random topic, HTTP 200, message observed arriving in the topic's event stream. AC-1: no notification code added or changed; delivery and triggers verified shared. AC-5: re-run of the three specs (unmodified): restock 8/8 pass; ntfyNotification test 1 and paymentMethodNotification fail one assertion each for reasons pre-existing at HEAD, unrelated to this feature: a stub-restoration race on the fire-and-forget `sendPOSNotification` (both pass with the async settled) and an assert on a `Receiving Account:` line `sendPOSNotification` has never produced (it emits `Paid Via:`). Those two, not the web path, need `/debug` (race) and possibly `/architect` (the spec's claimed "passing" state vs reality).
+  Spec 0006. code in `src/web/boot.ts`, `src/pages/web/Settings.vue`, `src/web/router.ts`, `scripts/ntfy-web-publish-check.mjs` (shared delivery path unchanged: `src/utils/ntfy.ts`, `models/` triggers)
 
 ### 12. Deploy & cutover readiness · needs a decision
 Operational readiness: production deploy pipeline and a final check that the invariants hold before onboarding real customers.
