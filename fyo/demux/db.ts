@@ -1,4 +1,12 @@
-import { DatabaseError, NotImplemented } from 'fyo/utils/errors';
+import {
+  DatabaseError,
+  NotImplemented,
+  SubscriptionInactiveError,
+} from 'fyo/utils/errors';
+import {
+  SUBSCRIPTION_INACTIVE_CODE,
+  type SubscriptionWireStatus,
+} from 'custom/web/billing/types';
 import { SchemaMap } from 'schemas/types';
 import { DatabaseDemuxBase, DatabaseMethod } from 'utils/db/types';
 import { BackendResponse } from 'utils/ipc/types';
@@ -14,6 +22,16 @@ export class DatabaseDemux extends DatabaseDemuxBase {
     const response = await func();
 
     if (response.error?.name) {
+      // A 402 from the worker's subscription gate (web only — Desktop's
+      // IPC path never sets `code`) surfaces as a typed error so app setup
+      // can route to /billing instead of treating it as a database fault.
+      if (response.error.code === SUBSCRIPTION_INACTIVE_CODE) {
+        throw new SubscriptionInactiveError(
+          response.error.message,
+          response.error.status ?? 'MISSING'
+        );
+      }
+
       const { name, message, stack } = response.error;
       const dberror = new DatabaseError(`${name}\n${message}`);
       dberror.stack = stack;
@@ -40,11 +58,21 @@ export class DatabaseDemux extends DatabaseDemuxBase {
       });
 
       if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        // The worker's denial bodies carry { error, code, status } (spec
+        // 0003 AC-2); code is what lets #handleDBCall tell a billing
+        // denial apart from any other HTTP failure. Older/plain error
+        // bodies ({ error } only) keep working: code stays undefined.
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          code?: string;
+          status?: SubscriptionWireStatus;
+        };
         return {
           error: {
             name: `HTTP${res.status}`,
             message: body.error ?? res.statusText,
+            code: body.code,
+            status: body.status,
           },
         };
       }

@@ -62,6 +62,19 @@ export class DatabaseError extends BaseError {
   }
 }
 
+/**
+ * Raised by the web db demux on a 402 SUBSCRIPTION_INACTIVE denial (spec
+ * 0003 AC-4). Carries the subscription's wire status so the caller can
+ * route to /billing and show the right copy without re-querying. Not
+ * stored: it is a navigation signal, not an app fault.
+ */
+export class SubscriptionInactiveError extends BaseError {
+  constructor(message: string, readonly status: string, shouldStore = false) {
+    super(402, message, shouldStore);
+    this.name = 'SubscriptionInactiveError';
+  }
+}
+
 export class CannotCommitError extends DatabaseError {
   constructor(message: string, shouldStore = true) {
     super(message, shouldStore);

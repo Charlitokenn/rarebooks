@@ -1,1 +1,0 @@
-import{r as e}from"./index--zwhJJ6x.js";const n=e.createContext(null),s=()=>{const t=e.useContext(n);if(t===null)throw new Error("Clerk: useOAuthConsentContext called outside of the mounted OAuthConsent component.");return t};export{n as O,s as u};

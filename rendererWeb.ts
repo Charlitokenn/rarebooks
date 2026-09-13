@@ -30,6 +30,7 @@ import { createApp } from 'vue';
 import { fyo } from 'src/initFyoWeb';
 import webRouter from 'src/web/router';
 import { initClerk } from 'src/web/clerk';
+import { initSubscriptionRedirect } from 'src/web/subscription';
 import './src/styles/index.css'; // Tailwind — same design tokens as Desktop, see colors.json
 
 // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -47,6 +48,10 @@ import './src/styles/index.css'; // Tailwind — same design tokens as Desktop, 
   });
 
   app.use(webRouter);
+
+  // A 402 from the subscription gate on any /api/db call routes to /billing
+  // (spec 0003 AC-4), even when the calling code didn't catch it.
+  initSubscriptionRedirect(webRouter);
 
   app.mixin({
     computed: {

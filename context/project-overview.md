@@ -43,7 +43,7 @@ Sidebar navigation (`src/components/Sidebar.vue`, with RareBooks-specific overri
 
 ### Flow 2 — Day-to-Day Bookkeeping
 
-Shared by both targets: users create and manage Sales/Purchase Invoices, record Payments and Journal Entries, and run Point of Sale transactions — all written through the `fyo` ORM (to local SQLite on Desktop, to Neon on Web). Inventory movements trigger restock notifications (ntfy on Desktop, OneSignal on Web).
+Shared by both targets: users create and manage Sales/Purchase Invoices, record Payments and Journal Entries, and run Point of Sale transactions — all written through the `fyo` ORM (to local SQLite on Desktop, to Neon on Web). Inventory movements trigger restock notifications — delivered via ntfy on both targets, using the same shared trigger and delivery code (`src/utils/ntfy.ts`).
 
 ### Flow 3a — Desktop Licensing & Subscription (unchanged)
 
@@ -110,8 +110,9 @@ Every request checks the signed-in user's organization subscription status (cont
 - Subscription-status access gating (no device license key)
 - PayPal Subscriptions checkout for users outside Tanzania
 - Lipa Namba manual payment instructions + super-admin claim review for Tanzania users
-- OneSignal push notifications (replacing ntfy)
 - Multi-user, multi-device access to the same organization's data simultaneously
+
+Notifications are not a Web-only item: Web keeps the same ntfy delivery path Desktop uses (see spec 0006; an earlier plan to switch Web to OneSignal was reversed 2026-09-12).
 
 ## Features Out of Scope
 
@@ -141,7 +142,7 @@ Every request checks the signed-in user's organization subscription status (cont
 - **Database:** Neon (Postgres), multi-tenant
 - **Auth:** Clerk (authentication + organization/tenant management, seat limits)
 - **Payments:** PayPal Subscriptions API (non-Tanzania), manual Lipa Namba instructions + super-admin review (Tanzania) — no Keymint, no ClickPesa
-- **Notifications:** OneSignal
+- **Notifications:** ntfy — the same shared delivery code as Desktop (`src/utils/ntfy.ts`), no separate web provider
 - **Other:** Wrangler (deploy tooling)
 
 ---

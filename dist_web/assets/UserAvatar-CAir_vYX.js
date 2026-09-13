@@ -1,1 +1,0 @@
-import{r as e}from"./index--zwhJJ6x.js";const a=e.createContext(null),s=()=>{const t=e.useContext(a);if(!t||t.componentName!=="UserAvatar")throw new Error("Clerk: useUserAvatarContext called outside UserAvatar.");const{componentName:r,...o}=t;return{...o,componentName:r}};export{a as U,s as u};

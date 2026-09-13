@@ -18,10 +18,10 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 05 | Inventory & payment notifications | Phase 3: Accounting Extensions | existing |
 | 06 | Web platform foundation & control plane | Phase 4: Web Migration | in-progress |
 | 07 | Tenant schema & data layer | Phase 4: Web Migration | in-progress |
-| 08 | Subscription gating & seat sync | Phase 4: Web Migration | planned |
+| 08 | Subscription gating & seat sync | Phase 4: Web Migration | in-progress |
 | 09 | PayPal subscriptions (non Tanzania payments) | Phase 4: Web Migration | planned |
 | 10 | Lipa Namba manual payments (Tanzania payments) & admin review | Phase 4: Web Migration | planned |
-| 11 | OneSignal notifications | Phase 4: Web Migration | planned |
+| 11 | Web notifications (ntfy) | Phase 4: Web Migration | planned |
 | 12 | Deploy & cutover readiness | Phase 4: Web Migration | planned |
 | 13 | Legal & compliance pages | Phase 4: Web Migration (addition) | planned |
 
@@ -40,7 +40,7 @@ Auto-creates a super admin user on first company setup if none exists. code in `
 Custom `Expense` doctype (schema, model, numbered series) with a documented migration recovery path. code in `custom/schemas/Expense.json`
 
 ### 05. Inventory & payment notifications · existing
-Restock notifications (with item image support) and payment method notifications, delivered via ntfy on Desktop. code in `custom/` notification handlers
+Restock notifications (with item image support) and payment method notifications, delivered via ntfy through the shared `src/utils/ntfy.ts` — the same trigger and delivery code the Web target keeps (feature 11). code in `custom/` notification handlers, `models/` triggers
 
 ## Phase 4: Web Migration
 
@@ -87,11 +87,23 @@ Apply the accounting schema to freshly provisioned tenant projects, and route do
 
 Spec updated 2026-09-06, cross-checked against the actual `backend/database/core.ts` (not assumed from memory or from feature 06's shape): `DatabaseCore` is Knex, hardwired to `better-sqlite3`; the accounting schema is applied by its own existing `migrate()` (schema-driven, from the same doctype definitions Desktop uses), not a hand-written SQL file the way feature 06's tiny control-plane schema is — the original draft's "write a migration script" assumed the feature-06 shape and was wrong. Also resolved spec 0001's open Follow-up item on the Workers-compatible Postgres driver: `@neondatabase/serverless`'s `Pool`/`Client` (node-postgres compatible, via the `"pg": "npm:@neondatabase/serverless"` package alias), confirmed via Context7 + npm, not the plain `neon()` tagged-template function feature 06 uses. A same-model cross-check pass (no subagent tool available in this session to get a genuinely independent model; noting the gap rather than skipping the check) is what caught the migration-script assumption — worth another look from whoever runs `/develop` on this, given the gap in how it was caught here.
 
-### 08. Subscription gating & seat sync · needs a decision
+### 08. Subscription gating & seat sync · in-progress
 Implement access control, the thing that replaces Keymint on Web: subscription status gating plus Clerk's native per org seat cap.
 **Done when:** a request against tenant data is blocked before the tenant connection is even resolved when the org's subscription status is not `ACTIVE`, and `maxAllowedMemberships` on Clerk is kept in sync with the org's plan tier on every activation, plan change, and cancellation.
-- [ ] Design it (spec): `/architect subscription gating & seat sync`
+- [x] Design it (spec): `/architect subscription gating & seat sync`
+  Spec [0003](../specs/0003-subscription-gating-seat-sync/index.md), updated in place 2026-09-12 after a cross-check against the actual `worker/` code (caught: the Hono `use`-after-inline-middleware ordering bug, and that the seed script physically cannot import the `worker/` package, so shared logic goes in `custom/web/billing/`).
+- [x] Build it: `/develop subscription gating & seat sync`
+  - [x] Shared core in `custom/web/billing/` (status read, seat sync, wire types), satisfies AC-5, AC-9
+  - [x] Gate middleware + `dbRoute.use` remount + worker-side tests, satisfies AC-1, AC-2, AC-3
+  - [x] `npm run seed:subscription` operator CLI (fixed upsert, required `--seats`), satisfies AC-7
+  - [x] `GET /api/subscription/status` + client 402 redirect + `/billing` prompt page, satisfies AC-4, AC-8
   Depends on 07. Must never import or reference `custom/licensing/` (Keymint) anywhere in this phase.
+  Built 2026-09-12. The spec's open runner question settled on vitest: `npm --prefix worker test` (16 gate/status tests, mocked Clerk auth + control plane + tenant resolver). Root tape suite covers the shared core (25 assertions, `npm test -- custom/web/billing/tests/billing.spec.ts`). Note: the live staging control plane predates `worker/db/schema.sql`'s current `subscriptions` definition — it is missing the `UNIQUE (org_id)` constraint the seed upsert's `ON CONFLICT` needs, and its status CHECK lacks `SUSPENDED`; the operator must apply those two ALTERs before first use (DDL against shared infra was left as a human call).
+- [ ] Verify it: `/check verify subscription gating & seat sync`
+- [ ] Test it: `/test subscription gating & seat sync`
+- [ ] Review it: `/check review subscription gating & seat sync`
+- [ ] Document it: `/document subscription gating & seat sync`
+  Spec 0003. code in `custom/web/billing/`, `worker/middleware/subscription-gate.ts`, `worker/routes/subscription-status.ts`, `worker/routes/db.ts`, `worker/index.ts`, `scripts/seed-subscription.ts`, `src/pages/web/Billing.vue`, `src/web/subscription.ts`, `src/web/router.ts`, `fyo/demux/db.ts`, `fyo/utils/errors.ts`, `utils/ipc/types.ts`, `rendererWeb.ts`
 
 ### 09. PayPal subscriptions (non Tanzania payments) · needs a decision
 Recurring subscription billing for tenants outside Tanzania.
@@ -105,11 +117,15 @@ Manual mobile money payment instructions for Tanzania tenants, with no live paym
 - [ ] Design it (spec): `/architect lipa namba manual payments`
   Depends on 08.
 
-### 11. OneSignal notifications · needs a decision
-Port restock and payment notification triggers from ntfy (Desktop) to OneSignal (Web), reusing the existing trigger logic.
-**Done when:** a restock or payment method event on the web platform reliably sends a OneSignal push to the right org or user, using the same trigger conditions Desktop already tests.
-- [ ] Design it (spec): `/architect onesignal notifications`
-  Depends on 07 (needs the tenant data layer to know what to notify about).
+### 11. Web notifications (ntfy) · designed
+Web keeps ntfy — no provider switch. The restock/payment triggers and `src/utils/ntfy.ts` delivery are shared code the web renderer already runs; a drafted OneSignal port was reversed on 2026-09-12 before any of it was built. What's left is a verification slice, not a port.
+**Done when:** a restock or payment event submitted in the hosted web app reaches the org's ntfy subscribers via the same shared code path Desktop uses — Settings fields editable per tenant on Web, a browser-origin publish observed arriving from the deployed origin, and the three existing notification specs passing unmodified on the web build.
+- [x] Design it (spec): spec [0006](../specs/0006-ntfy-notifications.md), rewritten in place 2026-09-12 from the OneSignal port to keeping ntfy (Charles's decision)
+- [ ] Build it: `/develop web notifications`
+  - [ ] `POSSettings.enableMobileNotifications` / `messageChannel` reachable and persisting per tenant through the web Settings surface, satisfies AC-2
+  - [ ] Browser-origin publish observed arriving at a subscribed ntfy client from the deployed web origin (the 2026-09-12 CORS preflight pass is necessary, not sufficient), satisfies AC-3, AC-4
+  - [ ] `restockNotification.spec.ts`, `paymentMethodNotification.spec.ts`, `ntfyNotification.spec.ts` re-run on the web build configuration, satisfies AC-1, AC-5
+  Depends on 07 (needs the tenant Settings round trip). No `custom/web/notifications/` module, no Worker route, no Worker secret — building any of those would be re-litigating spec 0006.
 
 ### 12. Deploy & cutover readiness · needs a decision
 Operational readiness: production deploy pipeline and a final check that the invariants hold before onboarding real customers.

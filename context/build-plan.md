@@ -208,19 +208,19 @@ Implement access control — the thing that replaces Keymint on Web.
 
 ---
 
-### 11 OneSignal Notifications
+### 11 Web Notifications (ntfy)
 
-Port restock/payment notification triggers from ntfy (Desktop) to OneSignal (Web).
+Web keeps ntfy — no provider switch. The restock/payment/shift-close triggers and `src/utils/ntfy.ts` are shared code that already runs wherever the `fyo` models run (renderer on Desktop, browser renderer on Web); this sub-phase is a verification slice, not a port. (An earlier draft planned a OneSignal delivery port; reversed 2026-09-12, see `docs/specs/0006-ntfy-notifications.md`.)
 
 **UI:**
 
-- Browser push permission prompt / notification preferences (if needed)
+- None new — `POSSettings` (`enableMobileNotifications`, `messageChannel`) is edited through the shared Settings surface once the web app shell exposes it
 
 **Logic:**
 
-- `custom/web/notifications/`: reuse existing trigger logic (see `restockNotification.spec.ts`, `paymentMethodNotification.spec.ts`), swap delivery to OneSignal's REST API
+- None new — reuse the existing trigger logic and `sendNtfyNotification` unchanged; confirm browser-origin publishes reach ntfy.sh from the deployed web origin (CORS preflight already confirmed 2026-09-12; an observed delivery is still owed), and re-run `restockNotification.spec.ts` / `paymentMethodNotification.spec.ts` / `ntfyNotification.spec.ts` on the web build configuration
 
-**Status:** Not started. Depends on 07 (needs the tenant data layer to know what to notify about).
+**Status:** Not started. Depends on 07 (needs the tenant Settings round trip). No Worker secrets, no `custom/web/notifications/` module.
 
 ---
 
@@ -232,7 +232,7 @@ Port restock/payment notification triggers from ntfy (Desktop) to OneSignal (Web
 
 **Logic:**
 
-- Wrangler deploy pipeline, Worker secrets configured for production PayPal/Clerk/Neon/OneSignal
+- Wrangler deploy pipeline, Worker secrets configured for production PayPal/Clerk/Neon (notifications need none — shared ntfy path, see 11)
 - Confirm the invariants hold: no Keymint or ClickPesa code present in the deployed Worker bundle
 - Load/smoke test multi-tenant query scoping before onboarding real customers
 

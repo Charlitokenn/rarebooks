@@ -22,7 +22,7 @@ Everything below is organized by target where the two diverge, and shared where 
 | Licensing      | Keymint.dev (device-bound, hybrid online/offline) | **None** — access gated by subscription status, not a license key       |
 | Payments       | ClickPesa (Tanzania USSD push)               | PayPal Subscriptions API (non-Tanzania) + manual Lipa Namba instructions (Tanzania), verified by a super admin |
 | Storage        | Local filesystem only                        | Neon — tenant project per org (accounting data) + one control-plane project (org/subscription/payment bookkeeping) |
-| Notifications  | ntfy, custom restock/payment notifications   | OneSignal, plus the same restock/payment notification logic             |
+| Notifications  | ntfy, custom restock/payment notifications   | Same — ntfy on both targets, same restock/payment triggers; no provider switch |
 | Styling        | Tailwind CSS v3 (postcss7-compat) + `colors.json` | Same — no styling changes for the web migration                         |
 | Build/Deploy   | electron-builder (Windows incl. MSIX, macOS, Linux) | Cloudflare Workers deploy (Wrangler)                                     |
 | Testing        | mocha + tape, Playwright (`uitest`)          | Same test tooling, plus Worker-side tests for the Hono API               |
@@ -60,7 +60,7 @@ RareBooks is a fork of **Frappe Books**, an open-source offline-first double-ent
 │   ├── web/                     # NEW — all web-only custom code lives here
 │   │   ├── auth/                 # Clerk integration (org creation, syncing plan tier → Clerk's maxAllowedMemberships, webhooks)
 │   │   ├── payments/             # PayPal Subscriptions client + webhook handler, Lipa Namba manual-verification flow
-│   │   └── notifications/        # OneSignal integration
+│   │   └── (notifications)       # NOT built — Web keeps ntfy via the shared `src/utils/ntfy.ts`; see spec 0006
 │   ├── schemas/, models/        # Custom schema/model additions (e.g. Expense, NumberSeries) — shared
 │   ├── main/, setup/, patches/  # Custom main-process hooks, default super admin setup — Desktop only
 │   └── src/                     # Custom Vue components — shared, plus web-only components under src/web/
@@ -73,7 +73,7 @@ RareBooks is a fork of **Frappe Books**, an open-source offline-first double-ent
 └── utils/                       # Platform-agnostic shared utilities — shared
 ```
 
-`worker/`, `rendererWeb.ts`, and `custom/web/` are new relative to upstream Frappe Books. As of 2026-09-12 they exist on this branch (built under specs 0001/0002): `worker/` (Hono API, Clerk middleware, control-plane + tenant DB layer), `custom/web/` (auth/provisioning, db, tenant migration runner), `src/pages/web/` + `src/web/` (sign-in, dashboard, Clerk client), `rendererWeb.ts`, `vite.config.web.ts`, and `scripts/migrate-tenants.*`. The paths above remain the target layout for the not-yet-built pieces (billing, payments, notifications).
+`worker/`, `rendererWeb.ts`, and `custom/web/` are new relative to upstream Frappe Books. As of 2026-09-12 they exist on this branch (built under specs 0001/0002): `worker/` (Hono API, Clerk middleware, control-plane + tenant DB layer), `custom/web/` (auth/provisioning, db, tenant migration runner), `src/pages/web/` + `src/web/` (sign-in, dashboard, Clerk client), `rendererWeb.ts`, `vite.config.web.ts`, and `scripts/migrate-tenants.*`. The paths above remain the target layout for the not-yet-built pieces (billing, payments). Notifications have no `custom/web/` path at all: Web keeps the shared ntfy delivery (see the `custom/web/` row in System Boundaries and spec 0006).
 
 ---
 
@@ -90,7 +90,7 @@ RareBooks is a fork of **Frappe Books**, an open-source offline-first double-ent
 | `schemas/`               | Server-side JSON schema definitions and schema-builder code, shared by both targets.           |
 | `utils/`, `dummy/`        | Platform-agnostic. No `node` `fs` or browser `window` APIs.                                    |
 | `custom/licensing/`      | Keymint device-bound licensing — **Desktop only**. Must never be imported from `worker/`, `rendererWeb.ts`, or anything under `custom/web/`. |
-| `custom/web/`            | All Web-only custom code (Clerk, PayPal, Lipa Namba manual flow, OneSignal) — kept isolated the same way `custom/licensing/` is, so it never leaks into the Desktop build. |
+| `custom/web/`            | All Web-only custom code (Clerk, PayPal, Lipa Namba manual flow) — kept isolated the same way `custom/licensing/` is, so it never leaks into the Desktop build. Notifications deliberately do **not** live here: Web uses the same shared ntfy path as Desktop (`src/utils/ntfy.ts`), see spec 0006. |
 | `custom/` (general)      | RareBooks-only additions overall. Kept isolated so upstream `frappe/books` merges stay low-conflict — integration points into core files are minimal and documented per feature. |
 
 ---
@@ -218,10 +218,10 @@ Approved → org's subscription status updated in Neon, same shape/fields as the
 
 ```
 Desktop: Inventory/payment event in a model → custom notification handler → ntfy / in-app Toast
-Web:     Same event → custom notification handler → OneSignal push, same triggering logic
+Web:     Same event, same models (they run in the browser renderer) → same shared `src/utils/ntfy.ts` → ntfy
 ```
 
-Tests: `restockNotification.spec.ts`, `paymentMethodNotification.spec.ts`, `ntfyNotification.spec.ts` (Desktop). A OneSignal-equivalent test suite should be added under `custom/web/notifications/` before this ships.
+Tests: `restockNotification.spec.ts`, `paymentMethodNotification.spec.ts`, `ntfyNotification.spec.ts` (shared trigger + delivery code, so they cover both targets; the web build must keep them passing unmodified — see spec 0006). An earlier plan to swap Web delivery to OneSignal was reversed on 2026-09-12.
 
 ---
 

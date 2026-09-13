@@ -65,7 +65,15 @@ let loadPromise: Promise<void> | undefined;
 
 /** Call once, before mounting the app. Idempotent. */
 export function initClerk(): Promise<void> {
-  loadPromise ??= clerk.load({ ui: { ClerkUI } });
+  loadPromise ??= clerk.load({
+    ui: { ClerkUI },
+    taskUrls: {
+      'choose-organization': '/session-tasks/choose-organization',
+      // add others you actually use, e.g.:
+      // 'reset-password': '/session-tasks/reset-password',
+      // 'setup-mfa': '/session-tasks/setup-mfa',
+    },
+  });
   return loadPromise;
 }
 

@@ -71,7 +71,7 @@ npm run format
 
 ## Specs
 
-`docs/specs/`: 0001 web platform foundation & control plane (in progress) · 0002 tenant schema & data layer · 0003 subscription gating & seat sync · 0004 PayPal subscriptions · 0005 Lipa Namba manual payments & admin review · 0006 OneSignal notifications · 0007 deploy & cutover readiness. See `docs/scope/scope.md` for the full plan (features 01-05 existing, 06 in progress, and 07-13 planned) and `context/build-plan.md` for the original, more detailed sub-phase writeups these specs were captured from.
+`docs/specs/`: 0001 web platform foundation & control plane (in progress) · 0002 tenant schema & data layer · 0003 subscription gating & seat sync · 0004 PayPal subscriptions · 0005 Lipa Namba manual payments & admin review · 0006 Web notifications (ntfy) · 0007 deploy & cutover readiness. See `docs/scope/scope.md` for the full plan (features 01-05 existing, 06 in progress, and 07-13 planned) and `context/build-plan.md` for the original, more detailed sub-phase writeups these specs were captured from.
 
 ## Rules
 

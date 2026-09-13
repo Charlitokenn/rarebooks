@@ -76,7 +76,9 @@ async function main(): Promise<number> {
     return summary.failed.length > 0 ? 1 : 0;
   } catch (err) {
     console.error(
-      `[migrate-tenants] ${err instanceof Error ? err.message : String(err)}`
+      `[migrate-tenants] ${err instanceof Error ? err.message : String(err)}`,
+      (err as any)?.sourceError,
+      (err as any)?.sourceError?.cause
     );
     return 1;
   }
