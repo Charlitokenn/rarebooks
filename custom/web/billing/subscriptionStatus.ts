@@ -18,11 +18,11 @@ import type {
 } from './types';
 
 const STATUSES: readonly SubscriptionStatus[] = [
+  'TRIAL',
   'ACTIVE',
   'PAST_DUE',
-  'EXPIRED',
-  'PENDING_REVIEW',
-  'SUSPENDED',
+  'GRACE',
+  'READ_ONLY',
   'CANCELLED',
 ];
 

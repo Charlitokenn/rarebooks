@@ -1,7 +1,7 @@
 # 0004. PayPal subscriptions (non Tanzania payments)
 
 **Date**: 2026-09-13 (revised in place; originally 2026-09-03)
-**Status**: Proposed
+**Status**: In Progress
 
 _This revision was deliberated after spec 0003 built the gate, the seat sync helper, and the Billing page it wires up, and after an independent cross-check pass closed thirteen completeness gaps (its verdict is recorded in Consequences). It replaces the original draft's plan, trial, and lifecycle design and owns the gate changes the engineer assigned to this spec._
 
