@@ -19,7 +19,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 06 | Web platform foundation & control plane | Phase 4: Web Migration | in-progress |
 | 07 | Tenant schema & data layer | Phase 4: Web Migration | in-progress |
 | 08 | Subscription gating & seat sync | Phase 4: Web Migration | in-progress |
-| 09 | PayPal subscriptions (non Tanzania payments) | Phase 4: Web Migration | planned |
+| 09 | PayPal subscriptions (non Tanzania payments) | Phase 4: Web Migration | in-progress |
 | 10 | Lipa Namba manual payments (Tanzania payments) & admin review | Phase 4: Web Migration | planned |
 | 11 | Web notifications (ntfy) | Phase 4: Web Migration | in-progress |
 | 12 | Deploy & cutover readiness | Phase 4: Web Migration | planned |
@@ -105,11 +105,22 @@ Implement access control, the thing that replaces Keymint on Web: subscription s
 - [ ] Document it: `/document subscription gating & seat sync`
   Spec 0003. code in `custom/web/billing/`, `worker/middleware/subscription-gate.ts`, `worker/routes/subscription-status.ts`, `worker/routes/db.ts`, `worker/index.ts`, `scripts/seed-subscription.ts`, `src/pages/web/Billing.vue`, `src/web/subscription.ts`, `src/web/router.ts`, `fyo/demux/db.ts`, `fyo/utils/errors.ts`, `utils/ipc/types.ts`, `rendererWeb.ts`
 
-### 09. PayPal subscriptions (non Tanzania payments) · needs a decision
-Recurring subscription billing for tenants outside Tanzania.
+### 09. PayPal subscriptions (non Tanzania payments) · in-progress
+Recurring subscription billing for tenants outside Tanzania, plus the full entitlement ladder (14 day own clock trial, 7 day grace, 5 day read only, then locked) that spec 0003's gate enforces.
 **Done when:** a tenant outside Tanzania can subscribe through PayPal, get charged on a recurring schedule, and the control plane's subscription and payments records update correctly from verified PayPal webhook events.
-- [ ] Design it (spec): `/architect paypal subscriptions`
+- [x] Design it (spec): `/architect paypal subscriptions`
+  Spec [0004](../specs/0004-paypal-subscriptions.md), revised in place 2026-09-13 (DIY/DFY two plan model, own clock trial, webhook promote / cron demote ladder, gate and client changes 0003 deferred here); an independent cross-check pass closed thirteen completeness gaps before acceptance.
   Depends on 08. Must never import or reference `custom/licensing/api/clickpesa-client.ts` (ClickPesa); PayPal fully replaces it on Web, not alongside it.
+- [ ] Build it: `/develop paypal subscriptions`
+  - [ ] Control plane schema + shared billing core (plans.ts, status union, gateDecision) + operator ALTER/backfill note, satisfies AC-14, AC-2/AC-10 (shared halves), AC-16 (constants)
+  - [ ] Thin thread end to end: sandbox PayPal client, checkout route with durable intents and binding, verifying webhook route with promote/refresh handlers, provisioning trial row, satisfies AC-1, AC-3 to AC-8, AC-12, AC-15
+  - [ ] Hourly ladder cron (refetch first, conditional rung writes, reconciliation) + gate tiering with read only refusals and status endpoint extension, satisfies AC-9, AC-10 (Worker half), AC-11 (guards), AC-16
+  - [ ] Client: Billing plan cards with checkout/cancel and return polling, nudge banners, read only inline refusal, CANCELLED router lock, satisfies AC-2, AC-10 (client half), AC-11, AC-15
+  - [ ] Production env separation and go live steps + no clickpesa bundle check, satisfies AC-12, AC-13
+- [ ] Verify it: `/check verify paypal subscriptions`
+- [ ] Test it: `/test paypal subscriptions`
+- [ ] Review it: `/check review paypal subscriptions`
+- [ ] Document it: `/document paypal subscriptions`
 
 ### 10. Lipa Namba manual payments (Tanzania payments) & admin review · needs a decision
 Manual mobile money payment instructions for Tanzania tenants, with no live payment API integration, verified by a super admin. Includes the super admin payment review page (the only admin surface currently in scope).

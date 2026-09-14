@@ -6,6 +6,15 @@ compatibility_flags = ["nodejs_compat"]
 workers_dev = true #Setting it to false explicitly acknowledges that you only want custom domain routing.
 preview_urls = false
 
+[observability]
+enabled = true
+head_sampling_rate = 1  # Optional: 1 means 100% of requests are logged.
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 0.05  # Recommended: 5% sampling for high-traffic workloads. Default is 1 (100%).
+
+
 [assets]
 directory = "../dist_web"
 binding = "ASSETS"
