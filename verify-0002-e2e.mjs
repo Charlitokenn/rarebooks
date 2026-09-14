@@ -7,6 +7,7 @@
  * cleanup, /api/subscription/status. E2E_BASE picks the target (deployed app
  * or local dev:web:full).
  */
+import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 
 const BASE = process.env.E2E_BASE ?? 'https://app.rarebooks.cc';
@@ -17,9 +18,24 @@ const MARKER = 'VERIFY-0002-E2E Pty';
 
 function log(...a) { console.log('[e2e]', ...a); }
 
+function assertStatus(response, expected, label) {
+  assert.equal(
+    response.status,
+    expected,
+    `${label} returned ${response.status}: ${JSON.stringify(response.body)}`
+  );
+}
+
+function assertRecord(value, label) {
+  assert.ok(
+    value && typeof value === 'object' && !Array.isArray(value),
+    `${label} must be a JSON object: ${JSON.stringify(value)}`
+  );
+}
+
 const browser = await chromium.launch({ args: ['--no-sandbox'] });
 try {
-  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  const ctx = await browser.newContext();
   const page = await ctx.newPage();
   const bodyText = () => page.evaluate(() => document.body.innerText);
 
@@ -94,7 +110,8 @@ try {
   await page.goto(BASE + '/dashboard', { waitUntil: 'domcontentloaded', timeout: 30000 });
   await page.waitForTimeout(2500);
   const dash = await page.textContent('body');
-  log('dashboard shows welcome shell:', dash.includes('Welcome to RareBooks'));
+  assert.ok(dash?.includes('Welcome to RareBooks'), 'dashboard must show the RareBooks welcome shell');
+  log('dashboard shows welcome shell: true');
   await page.screenshot({ path: '/tmp/e2e-dashboard.png' });
   const api = async (path, init) =>
     page.evaluate(
@@ -104,24 +121,91 @@ try {
       },
       { p: path, i: init ?? null }
     );
-  log('GET /api/dashboard ->', JSON.stringify(await api('/api/dashboard')));
+  const dashboardRes = await api('/api/dashboard');
+  assertStatus(dashboardRes, 200, 'GET /api/dashboard');
+  assertRecord(dashboardRes.body, 'GET /api/dashboard body');
+  assert.ok(
+    dashboardRes.body.status === 'PROJECT_CREATED' || dashboardRes.body.status === 'READY',
+    `GET /api/dashboard returned invalid status: ${JSON.stringify(dashboardRes.body.status)}`
+  );
+  assert.equal(typeof dashboardRes.body.orgId, 'string', 'GET /api/dashboard must return orgId');
+  assert.ok(dashboardRes.body.orgId.length > 0, 'GET /api/dashboard orgId must not be empty');
+  log('GET /api/dashboard ->', JSON.stringify(dashboardRes));
+
   const schemaRes = await api('/api/db/schema');
+  assertStatus(schemaRes, 200, 'GET /api/db/schema');
+  assertRecord(schemaRes.body, 'GET /api/db/schema body');
+  assertRecord(schemaRes.body.Party, 'GET /api/db/schema Party');
+  assert.equal(schemaRes.body.Party.name, 'Party', 'Party schema must identify itself');
+  assert.ok(Array.isArray(schemaRes.body.Party.fields), 'Party schema must include fields');
   log('GET /api/db/schema -> status', schemaRes.status, '| doctypes:', Object.keys(schemaRes.body ?? {}).length, '| hasParty:', !!schemaRes.body?.Party);
-  log('GET /api/subscription/status ->', JSON.stringify(await api('/api/subscription/status')));
+
+  const subscriptionRes = await api('/api/subscription/status');
+  assertStatus(subscriptionRes, 200, 'GET /api/subscription/status');
+  assertRecord(subscriptionRes.body, 'GET /api/subscription/status body');
+  assert.equal(typeof subscriptionRes.body.status, 'string', 'subscription status must be a string');
+  assert.ok(
+    ['TRIAL', 'ACTIVE', 'PAST_DUE', 'GRACE', 'READ_ONLY', 'CANCELLED', 'MISSING'].includes(subscriptionRes.body.status),
+    `subscription response returned invalid status: ${JSON.stringify(subscriptionRes.body.status)}`
+  );
+  assert.ok(Object.hasOwn(subscriptionRes.body, 'code'), 'subscription response must include code');
+  assert.ok(
+    [null, 'SUBSCRIPTION_INACTIVE', 'SUBSCRIPTION_READ_ONLY'].includes(subscriptionRes.body.code),
+    `subscription response returned invalid code: ${JSON.stringify(subscriptionRes.body.code)}`
+  );
+  log('GET /api/subscription/status ->', JSON.stringify(subscriptionRes));
 
   const audit = { createdBy: 'e2e@test', modifiedBy: 'e2e@test', created: new Date().toISOString(), modified: new Date().toISOString() };
   const call = (method, args) => api('/api/db/call', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ method, args }) });
   const out = {};
-  out.insert = await call('insert', ['Party', { name: MARKER, role: 'Customer', ...audit }]);
-  out.get = await call('get', ['Party', MARKER, ['name', 'role']]);
-  out.getAll = await call('getAll', ['Party', { filters: { name: MARKER }, fields: ['name'] }]);
-  out.update = await call('update', ['Party', { name: MARKER, email: 'e2e@example.test' }]);
-  out.getAfterUpdate = await call('get', ['Party', MARKER, ['email']]);
-  out.delete = await call('delete', ['Party', MARKER]);
-  out.existsAfterDelete = await call('exists', ['Party', MARKER]);
-  out.bespoke = await api('/api/db/bespoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ method: 'getLastInserted', args: ['NumberSeries'] }) });
-  out.rejectedMethod = await call('migrate', []);
-  console.log('[e2e] CRUD:', JSON.stringify(out, null, 1));
+  let inserted = false;
+  try {
+    out.insert = await call('insert', ['Party', { name: MARKER, role: 'Customer', ...audit }]);
+    inserted = out.insert.status === 200;
+    assertStatus(out.insert, 200, 'insert Party');
+    assertRecord(out.insert.body, 'insert Party body');
+    assert.equal(out.insert.body.name, MARKER, 'insert must return the Party name');
+    assert.equal(out.insert.body.role, 'Customer', 'insert must return the Party role');
+
+    out.get = await call('get', ['Party', MARKER, ['name', 'role']]);
+    assertStatus(out.get, 200, 'get Party');
+    assertRecord(out.get.body, 'get Party body');
+    assert.equal(out.get.body.name, MARKER, 'get must return the inserted Party');
+    assert.equal(out.get.body.role, 'Customer', 'get must return the inserted role');
+
+    out.getAll = await call('getAll', ['Party', { filters: { name: MARKER }, fields: ['name'] }]);
+    assertStatus(out.getAll, 200, 'getAll Party');
+    assert.ok(Array.isArray(out.getAll.body), 'getAll must return an array');
+    assert.ok(out.getAll.body.some((row) => row?.name === MARKER), 'getAll must include the inserted Party');
+
+    out.update = await call('update', ['Party', { name: MARKER, email: 'e2e@example.test' }]);
+    assertStatus(out.update, 200, 'update Party');
+
+    out.getAfterUpdate = await call('get', ['Party', MARKER, ['email']]);
+    assertStatus(out.getAfterUpdate, 200, 'get updated Party');
+    assertRecord(out.getAfterUpdate.body, 'get updated Party body');
+    assert.equal(out.getAfterUpdate.body.email, 'e2e@example.test', 'update must persist the Party email');
+
+    out.bespoke = await api('/api/db/bespoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ method: 'getLastInserted', args: ['NumberSeries'] }) });
+    assertStatus(out.bespoke, 200, 'getLastInserted bespoke query');
+    assert.equal(typeof out.bespoke.body, 'number', 'getLastInserted must return a number');
+    assert.ok(Number.isFinite(out.bespoke.body), 'getLastInserted must return a finite number');
+
+    out.rejectedMethod = await call('migrate', []);
+    assertStatus(out.rejectedMethod, 400, 'rejected migrate method');
+    assertRecord(out.rejectedMethod.body, 'rejected migrate method body');
+    assert.equal(typeof out.rejectedMethod.body.error, 'string', 'rejected method must return an error');
+    assert.ok(out.rejectedMethod.body.error.length > 0, 'rejected method error must not be empty');
+  } finally {
+    if (inserted) {
+      out.delete = await call('delete', ['Party', MARKER]);
+      assertStatus(out.delete, 200, 'delete Party cleanup');
+      out.existsAfterDelete = await call('exists', ['Party', MARKER]);
+      assertStatus(out.existsAfterDelete, 200, 'exists after Party cleanup');
+      assert.equal(out.existsAfterDelete.body, false, 'cleanup must remove the inserted Party');
+    }
+    console.log('[e2e] CRUD:', JSON.stringify(out, null, 1));
+  }
 } finally {
   await browser.close();
 }

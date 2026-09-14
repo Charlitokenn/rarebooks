@@ -36,12 +36,12 @@ ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS pending_cancel boolean
 ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS stage_ends_at timestamptz;
 
 -- 3. subscriptions: swap the six-state status CHECK for the ladder CHECK.
+ALTER TABLE subscriptions DROP CONSTRAINT IF EXISTS subscriptions_status_check;
 UPDATE subscriptions SET status = 'CANCELLED' WHERE status = 'EXPIRED';
 UPDATE subscriptions SET status = 'PAST_DUE' WHERE status = 'SUSPENDED';
 UPDATE subscriptions
    SET status = 'GRACE', stage_ends_at = now() + interval '7 days'
  WHERE status = 'PENDING_REVIEW';
-ALTER TABLE subscriptions DROP CONSTRAINT IF EXISTS subscriptions_status_check;
 ALTER TABLE subscriptions ADD CONSTRAINT subscriptions_status_check
   CHECK (status IN ('TRIAL', 'ACTIVE', 'PAST_DUE', 'GRACE', 'READ_ONLY', 'CANCELLED'));
 
@@ -73,7 +73,7 @@ CREATE INDEX IF NOT EXISTS idx_subscriptions_stage_ends_at
   WHERE stage_ends_at IS NOT NULL;
 
 -- 6. Backfill (spec 0004 AC-14): every org with no subscription row, and
---    every seeded ACTIVE row with no PayPal binding, becomes a 14-day TRIAL
+--    every seeded ACTIVE PayPal placeholder with no binding, becomes a 14-day TRIAL
 --    on the app's own clock. Rows WITH a paypal_subscription_id keep their
 --    status; the hourly cron owns their ladder from then on.
 INSERT INTO subscriptions (org_id, status, stage_ends_at)
@@ -87,6 +87,7 @@ UPDATE subscriptions
        stage_ends_at = now() + interval '14 days',
        updated_at = now()
  WHERE status = 'ACTIVE'
+   AND provider = 'paypal'
    AND paypal_subscription_id IS NULL;
 
 COMMIT;
