@@ -40,13 +40,16 @@ const showTopic = ref(false);
 const dirty = ref(false);
 const saving = ref(false);
 const saveError = ref('');
-const testState = ref<'idle' | 'sending' | 'sent'>('idle');
+const testState = ref<'idle' | 'sending' | 'sent' | 'failed'>('idle');
 let disposed = false;
 
 async function load() {
+  const requestedOrgId = orgId.value;
+  if (!requestedOrgId) return;
+
   view.value = { kind: 'LOADING' };
-  const boot = await ensureWebFyoReady();
-  if (disposed) return;
+  const boot = await ensureWebFyoReady(requestedOrgId);
+  if (disposed || orgId.value !== requestedOrgId) return;
 
   if (boot.status === 'NOT_SIGNED_IN') {
     void router.replace('/sign-in');
@@ -103,7 +106,9 @@ async function save() {
   saving.value = true;
   saveError.value = '';
   try {
-    const { fyo } = await ensureWebFyoReady();
+    const activeOrgId = orgId.value;
+    if (!activeOrgId) return;
+    const { fyo } = await ensureWebFyoReady(activeOrgId);
     const posSettings = fyo.singles.POSSettings!;
     await posSettings.set(
       'enableMobileNotifications',
@@ -127,16 +132,19 @@ async function save() {
  * Fail-soft by design upstream: it never throws at us.
  */
 async function sendTest() {
-  const { fyo } = await ensureWebFyoReady();
+  const activeOrgId = orgId.value;
+  if (!activeOrgId) return;
+  const { fyo } = await ensureWebFyoReady(activeOrgId);
+  if (disposed || orgId.value !== activeOrgId) return;
   testState.value = 'sending';
-  await sendNtfyNotification(
+  const sent = await sendNtfyNotification(
     fyo,
     'Test notification from RareBooks Web settings.',
     'RareBooks test',
     'white_check_mark'
   );
-  if (disposed) return;
-  testState.value = 'sent';
+  if (disposed || orgId.value !== activeOrgId) return;
+  testState.value = sent ? 'sent' : 'failed';
   setTimeout(() => {
     if (!disposed) testState.value = 'idle';
   }, 4000);
@@ -247,12 +255,21 @@ onUnmounted(() => {
                   ? 'Sending…'
                   : testState === 'sent'
                   ? 'Sent. Check your ntfy app.'
+                  : testState === 'failed'
+                  ? 'Delivery failed. Try again.'
                   : 'Send test notification'
               }}
             </button>
             <p v-if="testState === 'sent'" class="mt-1 text-xs text-gray-200">
               If it did not arrive, save first: the test uses the settings
               currently loaded, which must match what is saved.
+            </p>
+            <p
+              v-else-if="testState === 'failed'"
+              class="mt-1 text-xs text-red-500"
+            >
+              The notification could not be delivered. Check the saved topic and
+              your network connection.
             </p>
           </div>
         </section>

@@ -1,9 +1,19 @@
 import { Fyo } from 'fyo';
 
-export async function sendNtfyNotification(fyo: Fyo, message: string, title?: string, tags?: string, priority?: string) {
+export async function sendNtfyNotification(
+  fyo: Fyo,
+  message: string,
+  title?: string,
+  tags?: string,
+  priority?: string
+): Promise<boolean> {
   const settings = fyo.singles.POSSettings;
-  if (!settings || !settings.enableMobileNotifications || !settings.messageChannel) {
-    return;
+  if (
+    !settings ||
+    !settings.enableMobileNotifications ||
+    !settings.messageChannel
+  ) {
+    return false;
   }
 
   const topic = settings.messageChannel;
@@ -12,14 +22,14 @@ export async function sendNtfyNotification(fyo: Fyo, message: string, title?: st
   const topicPattern = /^[A-Za-z0-9_-]+$/;
   if (!topic || !topicPattern.test(topic)) {
     console.error('Invalid ntfy topic:', topic);
-    return;
+    return false;
   }
 
   const encodedTopic = encodeURIComponent(topic);
   const url = `https://ntfy.sh/${encodedTopic}`;
 
   const headers: Record<string, string> = {
-    'Markdown': 'yes'
+    Markdown: 'yes',
   };
 
   if (title) {
@@ -34,28 +44,32 @@ export async function sendNtfyNotification(fyo: Fyo, message: string, title?: st
     headers['Priority'] = priority;
   }
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
 
+  try {
     const response = await fetch(url, {
       method: 'POST',
       body: message,
       headers: headers,
-      signal: controller.signal
+      signal: controller.signal,
     });
-
-    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const error = await response.text();
       console.error('Failed to send ntfy notification:', error);
+      return false;
     }
+
+    return true;
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       console.error('Ntfy notification request timed out');
     } else {
       console.error('Error sending ntfy notification:', error);
     }
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }

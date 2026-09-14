@@ -38,7 +38,7 @@
 import type { Fyo } from 'fyo';
 import { models } from 'models/index';
 import { ModelNameEnum } from 'models/types';
-import { fyo } from 'src/initFyoWeb';
+import { fyo, resetWebFyo } from 'src/initFyoWeb';
 
 export type WebFyoStatus =
   | 'READY'
@@ -75,7 +75,7 @@ async function loadNotificationSingles(fyo: Fyo): Promise<void> {
   }
 }
 
-async function boot(): Promise<WebFyoBoot> {
+async function boot(bootFyo: Fyo): Promise<WebFyoBoot> {
   // Honest pre-check (see header comment): /api/dashboard's status decides
   // whether the schema fetch below can be expected to succeed. A
   // non-READY tenant is a valid, retryable state, not an error.
@@ -83,66 +83,82 @@ async function boot(): Promise<WebFyoBoot> {
   try {
     const res = await fetch('/api/dashboard', { credentials: 'include' });
     if (res.status === 401) {
-      return { fyo, status: 'NOT_SIGNED_IN' };
+      return { fyo: bootFyo, status: 'NOT_SIGNED_IN' };
     }
     const body = (await res.json().catch(() => ({}))) as { status?: string };
     tenantStatus = body.status ?? 'UNKNOWN';
   } catch (err) {
     return {
-      fyo,
+      fyo: bootFyo,
       status: 'FAILED',
       error: err instanceof Error ? err.message : String(err),
     };
   }
 
   if (tenantStatus !== 'READY') {
-    return { fyo, status: tenantStatus as WebFyoStatus };
+    return { fyo: bootFyo, status: tenantStatus as WebFyoStatus };
   }
 
   try {
     // demux web branch: POST /api/db/schema, then fieldMap build
     // (fyo/core/dbHandler.ts init()).
-    if (!fyo.db.isConnected) {
-      await fyo.db.connectToDatabase(WEB_DB_PATH);
+    if (!bootFyo.db.isConnected) {
+      await bootFyo.db.connectToDatabase(WEB_DB_PATH);
     }
     // Same call Desktop's initializeInstance makes: registers every model,
     // reads SystemSettings singles for money precision. Idempotent via
     // fyo._initialized.
-    await fyo.initializeAndRegister(models, {});
-    await loadNotificationSingles(fyo);
+    await bootFyo.initializeAndRegister(models, {});
+    await loadNotificationSingles(bootFyo);
   } catch (err) {
     // A failure here leaves fyo half-booted (schema connected but singles
     // missing, or vice versa). The caller treats it as FAILED and retries;
     // retry is safe because connectToDatabase and initializeAndRegister
     // are both guarded above, and a fresh getDoc re-reads.
     return {
-      fyo,
+      fyo: bootFyo,
       status: 'FAILED',
       error: err instanceof Error ? err.message : String(err),
     };
   }
 
-  return { fyo, status: 'READY' };
+  return { fyo: bootFyo, status: 'READY' };
 }
 
 let inFlight: Promise<WebFyoBoot> | null = null;
+let activeOrgId: string | null = null;
 
 /**
- * Boots the web fyo against the tenant database, once. Concurrent callers
+ * Boots the web fyo against the requested tenant database, once. Concurrent callers
  * (Dashboard and Settings mounting near-simultaneously, a remount after a
  * Clerk transition) share one in-flight boot instead of racing two schema
  * fetches. Only a READY result is cached: any other status stays
  * retryable, so a Retry click or a sign-in transition re-runs the boot
- * instead of being served the stale answer.
+ * instead of being served the stale answer. An organization change creates a
+ * fresh shared Fyo so schemas, documents, and Singles from the previous tenant
+ * cannot survive the switch.
  */
-export function ensureWebFyoReady(): Promise<WebFyoBoot> {
+export function ensureWebFyoReady(orgId: string): Promise<WebFyoBoot> {
+  if (activeOrgId !== orgId) {
+    activeOrgId = orgId;
+    inFlight = null;
+    resetWebFyo();
+  }
+
   if (inFlight === null) {
-    inFlight = boot().then((result) => {
-      if (result.status !== 'READY') {
+    const bootOrgId = orgId;
+    const bootFyo = fyo;
+    const currentBoot = boot(bootFyo).then((result) => {
+      if (
+        activeOrgId === bootOrgId &&
+        inFlight === currentBoot &&
+        result.status !== 'READY'
+      ) {
         inFlight = null;
       }
       return result;
     });
+    inFlight = currentBoot;
   }
   return inFlight;
 }
