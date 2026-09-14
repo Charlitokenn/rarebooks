@@ -78,6 +78,14 @@ interface Bucket {
 const bucket = computed<Bucket | null>(() => {
   if (view.value.kind !== 'STATUS') return null;
   switch (view.value.status) {
+    case 'TRIAL':
+      return {
+        badgeColor: 'green',
+        badgeText: 'Trial',
+        title: 'You are on the free trial',
+        body: 'The full app is open until your trial ends. Pick a plan any time before it does and billing starts then.',
+        showCta: false,
+      };
     case 'ACTIVE':
       return {
         badgeColor: 'green',
@@ -86,16 +94,23 @@ const bucket = computed<Bucket | null>(() => {
         body: 'Everything is paid up. Return to your dashboard to keep working.',
         showCta: false,
       };
-    case 'PENDING_REVIEW':
+    case 'GRACE':
       return {
-        badgeColor: 'blue',
-        badgeText: 'Pending review',
-        title: 'Your payment is under review',
-        body: 'We received your payment details and a super admin is checking them. Access opens as soon as it is approved.',
-        showCta: false,
+        badgeColor: 'yellow',
+        badgeText: 'Grace period',
+        title: 'Your subscription has ended',
+        body: 'Everything still works for now. Choose a plan before the grace period ends to keep your access.',
+        showCta: true,
+      };
+    case 'READ_ONLY':
+      return {
+        badgeColor: 'yellow',
+        badgeText: 'Read only',
+        title: 'Your account is read only',
+        body: 'You can view and download your books, but nothing can be added or changed until a plan is chosen. Your data is safe.',
+        showCta: true,
       };
     case 'CANCELLED':
-    case 'EXPIRED':
     case 'MISSING':
       return {
         badgeColor: 'gray',
@@ -105,7 +120,7 @@ const bucket = computed<Bucket | null>(() => {
         showCta: true,
       };
     default:
-      // PAST_DUE, SUSPENDED, and anything unrecognized: payment problem.
+      // PAST_DUE and anything unrecognized: payment problem.
       return {
         badgeColor: 'yellow',
         badgeText: view.value.status === 'PAST_DUE' ? 'Past due' : 'Suspended',

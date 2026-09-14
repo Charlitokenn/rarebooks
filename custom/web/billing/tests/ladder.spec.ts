@@ -79,8 +79,16 @@ test('ladder windows match the spec', (t) => {
 test('plan tiers carry the sold seats and USD prices', (t) => {
   t.deepEqual(
     {
-      diy: { seats: PLANS.diy.seats, monthly: PLANS.diy.priceUsd.monthly, yearly: PLANS.diy.priceUsd.yearly },
-      dfy: { seats: PLANS.dfy.seats, monthly: PLANS.dfy.priceUsd.monthly, yearly: PLANS.dfy.priceUsd.yearly },
+      diy: {
+        seats: PLANS.diy.seats,
+        monthly: PLANS.diy.priceUsd.monthly,
+        yearly: PLANS.diy.priceUsd.yearly,
+      },
+      dfy: {
+        seats: PLANS.dfy.seats,
+        monthly: PLANS.dfy.priceUsd.monthly,
+        yearly: PLANS.dfy.priceUsd.yearly,
+      },
     },
     {
       diy: { seats: 2, monthly: 20, yearly: 204 },

@@ -5,19 +5,16 @@
 
 _This revision was deliberated after spec 0003 built the gate, the seat sync helper, and the Billing page it wires up, and after an independent cross-check pass closed thirteen completeness gaps (its verdict is recorded in Consequences). It replaces the original draft's plan, trial, and lifecycle design and owns the gate changes the engineer assigned to this spec._
 
+_Build contract only; the decision history (Context, Options considered, Rationale, References)
+is in [rationale.md](rationale.md). Verification steps for this build are in [verify.md](verify.md)._
+
 ## Summary
+
 
 This spec puts real billing behind the access gate spec 0003 built. Every new organization gets a 14 day free trial the moment it is provisioned and goes straight into the app, with no PayPal involved. Customers outside Tanzania then subscribe to one of two plans, Do It Yourself (2 seats, $20 per month or $204 per year) or Done For You (5 seats, $49 per month or $500 per year), billed in USD through PayPal Subscriptions. When an entitlement ends without payment, the org slides down a fixed ladder: 7 days of full access with upgrade nudges, then 5 days read only (view and download, no adds or changes or deletes), then a hard lock to the upgrade page. One rule keeps the machine honest: PayPal webhooks can only move an org up (activation, a payment that restores access), and the hourly job is the only thing that moves an org down, and only after rechecking PayPal's live status, so a lost webhook can never wrongly lock a paying customer or leave a dead org free.
 
-## Context
-
-Desktop sells licenses via ClickPesa, a Tanzania only mobile money integration that does not serve customers elsewhere. PayPal Subscriptions is the chosen product for that audience. The original draft of this spec predated the built gating layer, so it never said where a seat number comes from on activation, how plan tiers exist at all (the control plane has no plan column), what a customer can do after subscribing (cancel, switch), or what happens between signup and first payment (under spec 0003's gate, a brand new org is locked out, since no subscription row exists until PayPal calls back).
-
-The business model settled in this revision: two plans per organization, DIY and DFY, at the prices above, monthly or yearly, in USD. DFY's difference is three human services (data migration and app setup, over the shoulder training, priority support), not gated software features; the only in product difference is the seat count, and both plans run the identical app. The trial gives the full app (5 seats) from signup; the customer picks a plan when they upgrade, and upgrading mid trial starts billing immediately. After entitlement ends: 7 grace days with full access, 5 read only days, then locked.
-
-Technical forces. PayPal's `CreateSubscriptionRequest` still marks `applicationContext` and `autoRenewal` deprecated as of the September 2026 SDK docs crosscheck, so the approval experience fields must not be built from memory. The TypeScript Server SDK has no webhook signature verification helper, and Workers has no CRC32 builtin, so verification is hand rolled WebCrypto. The staging control plane already drifts from `worker/db/schema.sql` (spec 0003's build note), so every schema change here ships as a documented operator ALTER list alongside the file update. Webhooks can be lost, reordered, or duplicated, and PayPal does not guarantee arrival order, so the design must converge to the truth from a missing event as readily as from a duplicate one.
-
 ## Requirements
+
 
 **User stories**:
 - As a new business owner, I want my workspace open immediately with a 14 day trial so that I can evaluate the app before paying anything.
@@ -44,51 +41,13 @@ Technical forces. PayPal's `CreateSubscriptionRequest` still marks `applicationC
 - **AC-15**: The checkout create request carries the app's own `return_url` (`/billing`) and `cancel_url` (`/billing?checkout=cancelled`) via the non deprecated fields current PayPal docs prescribe; after PayPal redirects back, Billing polls `GET /api/subscription/status` every 3 seconds for up to 120 seconds, renders success only when the polled status reads `ACTIVE` with the new plan (never by optimistic client state), and on timeout shows "activation is processing, reload in a moment" with the AC-9 reconcile pass as the backstop.
 - **AC-16**: `GET /api/subscription/status` returns `code: null` for `TRIAL`, `ACTIVE`, `PAST_DUE`, and `GRACE`, `code: 'SUBSCRIPTION_READ_ONLY'` for `READ_ONLY`, and `code: 'SUBSCRIPTION_INACTIVE'` for `CANCELLED` or a missing row; the added `plan`, `currentPeriodEnd`, and `stageEndsAt` fields are `null` when no row exists, so the banner can distinguish nudge from block from lock on this response alone.
 
-## Options considered
-
-### Option 1: PayPal Subscriptions, webhook promotes, cron demotes (chosen)
-
-Org provisioning opens the trial on RareBooks's own clock (a `TRIAL` row plus a cron); PayPal plans are plain paid plans (monthly and yearly variants of each tier); checkout, status display, cancel, and the whole ladder live in the app. Verified webhooks apply promotions (activation, payment restore) and refresh fields immediately; the hourly cron alone demotes rungs, and only after refetching PayPal's live subscription.
-
-**Pros**:
-- Signup reaches the app instantly, which is the product promise; a PayPal trial period cannot do that, since one only exists after a PayPal approval.
-- A lost, reordered, or duplicated webhook converges to truth within an hour, and the direction is always safe: a missing event can never lock a paying customer, at worst it delays a lapsed org's lockout by one cron pass.
-- One mechanism (status plus `stage_ends_at` plus one demoting writer) drives the gate, the cron, and the client banner.
-
-**Cons**:
-- The ladder needs the cron, the status CHECK change, and gate changes that touch spec 0003's just built, not yet verified surface.
-- A lapsed org keeps full access up to about an hour longer than the exact entitlement second (the next cron pass).
-- A subscriber who upgrades mid trial forfeits unused trial days (billing starts at approval).
-
-### Option 2: PayPal trial periods with PayPal side management
-
-Plans carry a 14 day trial; the customer must check out at signup; cancel and plan management happen on paypal.com.
-
-**Pros**:
-- No cron and no own clock; PayPal's own trial and billing events drive everything; less app surface.
-
-**Cons**:
-- Contradicts "straight to the web app on trial at signup": a PayPal subscription, and so its trial, only exists after checkout and approval.
-
-### Option 3: PayPal Orders API with self managed recurring billing
-
-Single use Orders/Vault payments with a self built schedule that retries charging on RareBooks's own clock.
-
-**Pros**:
-- Total control of timing and plan switching without PayPal's subscription model.
-
-**Cons**:
-- Rebuilds dunning, card on file, retry windows, and payer UX that PayPal Subscriptions provides; far more failure modes for a two plan product.
-
 ## Decision
+
 
 **Chosen option**: Option 1: PayPal Subscriptions (two products, four plans: DIY and DFY, each monthly and yearly, all USD, sandbox until go live), own clock trial opened by provisioning, a six state status ladder where verified webhooks only promote and the hourly cron alone demotes (each demotion preceded by a live status refetch, each rung write conditional), durable checkout intents with stable `PayPal-Request-Id` and an owned state machine, checkout, plan switch, and cancel in-app, organization admins only, and an approval return flow that polls the server for truth.
 
-## Rationale
-
-PayPal Subscriptions is the standard recurring product for the outside Tanzania audience, and its event set maps onto the ladder without owning the ladder itself (basis: September 2026 SDK docs crosscheck, and the original 0004 draft's same conclusion). The trial clock is RareBooks's own because the product promise (instant app access from signup) cannot ride a PayPal trial, which only exists post approval (basis: the engineer's signup flow requirement; `handleOrganizationCreated` is already the provisioning hook). The promote and demote split exists because webhooks are both untrusted until verified and unreliable in delivery: letting only the cron move rows down, and only after PayPal's live API confirms it, makes every lost event converge safely (wrong direction impossible: billing stays on for a paying org; tolerable delay: a lapsed org's lockout slips to the next pass) (basis: distributed systems idempotent reconciliation, and the cross-check pass's finding 2). Writing the PayPal subscription ID at checkout time (not at `ACTIVATED`) breaks the first activation chicken and egg: the binding exists before the lookup needs it, re-subscription overwrites cleanly, and superseded IDs 404 as noise (basis: cross-check finding 1). Verify then refetch, rather than trusting the payload, because the create request schema already changed once during planning and the API surface keeps moving (basis: the deprecated fields found September 2026). Two plan IDs plus a seat map in code beats PayPal metadata seats for two fixed tiers: fewer sources of truth, and seats must exist before any PayPal call anyway for the trial (basis: engineer's plan model). The mid trial forfeiture is accepted consciously; billing anchors to approval with no future start time games (a pending future start subscription adds states the ladder does not need). Manual REST instead of the TypeScript SDK for all PayPal calls: the SDK ships no webhook verification helper (September 2026 doc search found none) and its Workers compatibility is unproven, while the integration needs a handful of endpoints (basis: Workers runtime constraints; runner up is the SDK if more PayPal surface grows later).
-
 ## Feature design
+
 
 **Data model sketch** (control plane Neon, `worker/db/schema.sql`):
 - `organizations`: unchanged (`plan_seat_limit` keeps its record of intent role, spec 0003).
@@ -180,20 +139,22 @@ PayPal `SUSPENDED`, `EXPIRED`, and `CANCELLED` events refresh fields; the cron's
 
 ## Build plan
 
+
 Tracer Bullet (project default): tasks 1 through 5 stand up a thin trial to upgrade to paid thread through every layer, then the ladder and the client thicken it. Task 1's operator ALTER and backfill list runs before task 4 tests hit staging.
 
-1. Schema change in `worker/db/schema.sql` plus the documented operator ALTER and backfill note (new CHECK, nullable provider, `plan`, `pending_cancel`, `stage_ends_at`, `payments.currency`, `subscription_checkout_intents` with the partial unique indexes; seed and unbound rows to `TRIAL`). Satisfies **AC-14** (foundation for AC-1, AC-3, AC-6, AC-9).
-2. Shared billing core: `plans.ts` (tiers, prices, seats, ladder windows), the six state status union and wire types update in `custom/web/billing/types.ts` (incl. `SUBSCRIPTION_READ_ONLY_*` and `SUBSCRIPTION_ADMIN_REQUIRED` constants), and `gateDecision` in `custom/web/billing/subscriptionGate.ts`, with the root tape suite extended. Satisfies **AC-2** (shared half), **AC-10** (shared half), **AC-16** (constants).
+1. [x] Schema change in `worker/db/schema.sql` plus the documented operator ALTER and backfill note (new CHECK, nullable provider, `plan`, `pending_cancel`, `stage_ends_at`, `payments.currency`, `subscription_checkout_intents` with the partial unique indexes; seed and unbound rows to `TRIAL`). Satisfies **AC-14** (foundation for AC-1, AC-3, AC-6, AC-9).
+2. [x] Shared billing core: `plans.ts` (tiers, prices, seats, ladder windows), the six state status union and wire types update in `custom/web/billing/types.ts` (incl. `SUBSCRIPTION_READ_ONLY_*` and `SUBSCRIPTION_ADMIN_REQUIRED` constants), and `gateDecision` in `custom/web/billing/subscriptionGate.ts`, with the root tape suite extended. Satisfies **AC-2** (shared half), **AC-10** (shared half), **AC-16** (constants).
 3. PayPal client and checkout: `custom/web/payments/paypal-client.ts` (token, create with `return_url`/`cancel_url`, cancel, get, verify REST), the checkout route with the full intent state machine (AC-3 writers), the create time binding (AC-6), the admin guard, and the member count downgrade guard, against sandbox. Satisfies **AC-3, AC-6** (binding), **AC-11** (guards), **AC-12** (sandbox), **AC-15** (URLs), **AC-2** (Worker guard half).
 4. Webhook route: verify (WebCrypto CRC32 path), refetch, resolve (subscriptions row then intent fallback), then the promote handlers (`ACTIVATED`, restoring `SALE.COMPLETED` with the AC-7 column mapping) and the refresh handlers (`SUSPENDED`, `CANCELLED`, `EXPIRED`, `PAYMENT.FAILED`, `ACTIVATION.CANCELLED`), transactional and replay safe. Satisfies **AC-4, AC-5, AC-6** (resolution), **AC-7, AC-8**.
 5. Provisioning trial: `handleOrganizationCreated` writes the `TRIAL` row and syncs 5 seats. A test org can: signup into trial, click checkout, approve in sandbox PayPal, come back `ACTIVE`. Satisfies **AC-1** (closing the thin thread).
 6. Hourly cron: demotion ladder with refetch first, the reconciliation repair pass, conditional rung writes, and abandoned intent failing, registered via `[triggers]`. Satisfies **AC-9** (plus the intent timeout writer of **AC-3**).
-7. Gate tiering and status: wire `gateDecision` into `requireActiveSubscription` (method kind classification for `/api/db/call`, reads and bespoke pass, writes refuse), the bespoke pure-read structural test, the `GET /api/subscription/status` code mapping and added fields, Worker vitest coverage. Satisfies **AC-10** (Worker half), **AC-16**.
+7. [x] Gate tiering and status: wire `gateDecision` into `requireActiveSubscription` (method kind classification for `/api/db/call`, reads and bespoke pass, writes refuse), the bespoke pure-read structural test, the `GET /api/subscription/status` code mapping and added fields, Worker vitest coverage. Satisfies **AC-10** (Worker half), **AC-16**.
 8. Billing page: plan cards from `plans.ts`, admin gated checkout buttons, the trial billed today confirm, the return polling card and cancel handling, the cancel button and pending state. Satisfies **AC-2, AC-11** (user flow), **AC-15**, and the checkout UX half of **AC-3**.
 9. Web shell: nudge banner per rung (trial day 8+, past due, grace, read only), `SubscriptionReadOnlyError` in the demux path with the inline upgrade to edit message and no route change, and the `CANCELLED` router lock to the upgrade page. Satisfies **AC-10** (client half), **AC-1** (nudge), **AC-16** (client consumption).
 10. Production env separation: live credentials, vars, and plan IDs as explicit go live steps against `[env.production]`, and the bundle grep proving no `clickpesa-client` reference in the Web build. Satisfies **AC-12, AC-13**.
 
 ## Consequences
+
 
 **Positive**:
 - The whole money path (trial, subscribe, charge, fail, cancel, lock) is one coherent machine with a safe failure direction: a lost PayPal event can only delay a lockout or be repaired within an hour, never wrongly lock a payer or strand a dead org free.
@@ -215,6 +176,7 @@ Tracer Bullet (project default): tasks 1 through 5 stand up a thin trial to upgr
 
 ## Follow-up
 
+
 - [ ] Immediately before task 3, rerun the context7 lookup for Create Subscription (current `return_url`/`cancel_url` or `user_action` field shapes), cancel, get, and verify webhook signature against current PayPal docs; the deprecated `applicationContext`/`autoRenewal` shape must not be built from this spec's summary. Also confirm PayPal's webhook non 2xx redelivery window (AC-6's 404 retry assumption).
 - [ ] Confirm the Clerk session organization role claim for owner/admin and the member count read against current Clerk docs (via context7) before wiring the guards in task 3.
 - [ ] Operator: apply the ALTER and backfill list from task 1 to staging before first webhook testing, and register the seven event types on the staging PayPal webhook.
@@ -223,27 +185,3 @@ Tracer Bullet (project default): tasks 1 through 5 stand up a thin trial to upgr
 - [ ] Spec 0003: its gate, status union comment, and Billing prompt buckets note the old six states and "two fixed shapes"; run `/sync` after this feature lands so 0003's records point here for the revised ladder (0003 itself stays in progress; verify must re-run after task 7).
 - [ ] Finalize DIY card copy (its perks list and support wording); DFY's three perks are confirmed.
 - [ ] Set the live PayPal product and plan prices ($20/204, $49/500 USD) at the go live step; sandbox carries the same numbers for realism.
-
-## References
-
-**Project sources**:
-- `AGENTS.md` (shared code rules: `custom/web/` for logic both Worker and scripts use; Worker env secrets pattern; Tracer Bullet default)
-- `custom/licensing/AGENTS.md` (ClickPesa stays Electron only; never extend it for Web)
-- Spec 0003 (`0003-subscription-gating-seat-sync/index.md`): the gate, `seatSync`, `getSubscriptionStatus`, the status route, Billing page, and the staging drift precedent this spec builds on
-- Spec 0001 (`0001-web-platform-foundation-control-plane.md`): control plane tables, Clerk webhook patterns, provisioning hook
-- `worker/db/schema.sql`, `worker/routes/webhooks/organization-created.ts`, `custom/web/db/tenantDatabase.ts`, `backend/database/bespoke.ts`: current constraints and the thin route delegates to `custom/web/` convention
-- September 2026 crosscheck during the original draft (deprecated create request fields), this revision's SDK docs search (no webhook verification helper), and this revision's independent cross-check pass (the thirteen closed gaps)
-
-**Practices & standards**:
-- Verify, then treat the provider's API as the source of truth (webhook as a signal, not a payload of record)
-- Idempotency keys for money operations (`PayPal-Request-Id` on a durable intent)
-- Replay safe event ingestion via a unique provider event ID inside one transaction
-- Convergent reconciliation: monotone demotion owned by one scheduled writer that refetches truth first, events only promote (lost update and lost event safety)
-- Compare and swap conditional updates for concurrent row writers
-- Fail closed on entitlement checks; never lock a customer out of reading their own data short of an explicit final state
-- PCI DSS SAQ A posture via hosted redirect (no card data touches the platform)
-
-**Links** (web verified via context7, September 2026):
-- Create Subscription request model (shows `applicationContext` and `autoRenewal` deprecated): https://github.com/paypal/paypal-typescript-server-sdk/blob/main/doc/models/create-subscription-request.md
-- Cancel subscription request model: https://github.com/paypal/paypal-typescript-server-sdk/blob/main/doc/models/cancel-subscription-request.md
-- Subscriptions controller (create, get, cancel, suspend examples): https://github.com/paypal/paypal-typescript-server-sdk/blob/main/doc/controllers/subscriptions.md

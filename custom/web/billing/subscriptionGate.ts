@@ -111,7 +111,7 @@ const FULL_ACCESS: readonly SubscriptionStatus[] = [
 /**
  * The rung table. Wire-only statuses are handled: MISSING (no row) blocks
  * like CANCELLED. `null` (an unrecognized stored value, treated as absent
- * by getSubscriptionStatus) blocks too — fail closed, same rule as 0003.
+ * by getSubscriptionRow) blocks too — fail closed, same rule as 0003.
  */
 export function gateDecision(
   status: SubscriptionWireStatus | null,
@@ -136,7 +136,9 @@ export function gateDecision(
  * else (CANCELLED, MISSING) the existing INACTIVE code, so a client written
  * against 0003's two codes still routes correctly on the new ladder.
  */
-export function wireCodeForStatus(status: SubscriptionWireStatus): string | null {
+export function wireCodeForStatus(
+  status: SubscriptionWireStatus
+): string | null {
   switch (status) {
     case 'TRIAL':
     case 'ACTIVE':

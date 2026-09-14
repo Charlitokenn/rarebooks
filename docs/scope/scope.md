@@ -109,10 +109,10 @@ Implement access control, the thing that replaces Keymint on Web: subscription s
 Recurring subscription billing for tenants outside Tanzania, plus the full entitlement ladder (14 day own clock trial, 7 day grace, 5 day read only, then locked) that spec 0003's gate enforces.
 **Done when:** a tenant outside Tanzania can subscribe through PayPal, get charged on a recurring schedule, and the control plane's subscription and payments records update correctly from verified PayPal webhook events.
 - [x] Design it (spec): `/architect paypal subscriptions`
-  Spec [0004](../specs/0004-paypal-subscriptions.md), revised in place 2026-09-13 (DIY/DFY two plan model, own clock trial, webhook promote / cron demote ladder, gate and client changes 0003 deferred here); an independent cross-check pass closed thirteen completeness gaps before acceptance.
+  Spec [0004](../specs/0004-paypal-subscriptions/index.md), revised in place 2026-09-13 (DIY/DFY two plan model, own clock trial, webhook promote / cron demote ladder, gate and client changes 0003 deferred here); an independent cross-check pass closed thirteen completeness gaps before acceptance.
   Depends on 08. Must never import or reference `custom/licensing/api/clickpesa-client.ts` (ClickPesa); PayPal fully replaces it on Web, not alongside it.
 - [ ] Build it: `/develop paypal subscriptions`
-  - [ ] Control plane schema + shared billing core (plans.ts, status union, gateDecision) + operator ALTER/backfill note, satisfies AC-14, AC-2/AC-10 (shared halves), AC-16 (constants)
+  - [x] Control plane schema + shared billing core (plans.ts, status union, gateDecision) + operator ALTER/backfill note, satisfies AC-14, AC-2/AC-10 (shared halves), AC-16 (constants)
   - [ ] Thin thread end to end: sandbox PayPal client, checkout route with durable intents and binding, verifying webhook route with promote/refresh handlers, provisioning trial row, satisfies AC-1, AC-3 to AC-8, AC-12, AC-15
   - [ ] Hourly ladder cron (refetch first, conditional rung writes, reconciliation) + gate tiering with read only refusals and status endpoint extension, satisfies AC-9, AC-10 (Worker half), AC-11 (guards), AC-16
   - [ ] Client: Billing plan cards with checkout/cancel and return polling, nudge banners, read only inline refusal, CANCELLED router lock, satisfies AC-2, AC-10 (client half), AC-11, AC-15

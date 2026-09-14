@@ -5,12 +5,8 @@
  * injected as fakes — nothing real is contacted.
  */
 import test from 'tape';
-import {
-  SeatSyncError,
-  syncSeatCap,
-  upsertPlanSeatLimit,
-} from '../seatSync';
-import { getSubscriptionStatus, wireFromStatus } from '../subscriptionStatus';
+import { SeatSyncError, syncSeatCap, upsertPlanSeatLimit } from '../seatSync';
+import { getSubscriptionRow, wireFromStatus } from '../subscriptionStatus';
 import type { ControlQueryFn } from '../types';
 
 interface FakeCall {
@@ -22,11 +18,13 @@ interface FakeCall {
  * Minimal in-memory control plane: a subscriptions row per org and an
  * organizations table, keyed on the SQL prefix the helpers actually emit.
  */
-function createFakeDb(options: {
-  subscriptionStatus?: string | null;
-  orgExists?: boolean;
-  failOn?: 'select' | 'update';
-} = {}): { db: ControlQueryFn; calls: FakeCall[] } {
+function createFakeDb(
+  options: {
+    subscriptionStatus?: string | null;
+    orgExists?: boolean;
+    failOn?: 'select' | 'update';
+  } = {}
+): { db: ControlQueryFn; calls: FakeCall[] } {
   const calls: FakeCall[] = [];
   const db: ControlQueryFn = async (
     strings: TemplateStringsArray,
@@ -35,7 +33,7 @@ function createFakeDb(options: {
     const sql = strings.join('?').replace(/\s+/g, ' ').trim();
     calls.push({ sql, values });
 
-    if (sql.startsWith('SELECT status FROM subscriptions')) {
+    if (sql.startsWith('SELECT status') && sql.includes('FROM subscriptions')) {
       if (options.failOn === 'select') {
         throw new Error('connection reset');
       }
@@ -79,35 +77,63 @@ function createFakeFetch(options: {
   }) as unknown as typeof globalThis.fetch;
 }
 
-test('getSubscriptionStatus returns ACTIVE for an active row', async (t) => {
+test('getSubscriptionRow returns ACTIVE for an active row', async (t) => {
   const { db } = createFakeDb({ subscriptionStatus: 'ACTIVE' });
-  const status = await getSubscriptionStatus(db, 'org_1');
-  t.equal(status, 'ACTIVE');
+  const row = await getSubscriptionRow(db, 'org_1');
+  t.equal(row?.status, 'ACTIVE');
   t.end();
 });
 
-test('getSubscriptionStatus returns null when no row exists', async (t) => {
+test('getSubscriptionRow returns null when no row exists', async (t) => {
   const { db } = createFakeDb();
-  const status = await getSubscriptionStatus(db, 'org_1');
-  t.equal(status, null);
+  const row = await getSubscriptionRow(db, 'org_1');
+  t.equal(row, null);
   t.end();
 });
 
-test('getSubscriptionStatus treats an unrecognized status as null (fail closed)', async (t) => {
+test('getSubscriptionRow treats an unrecognized status as null (fail closed)', async (t) => {
   const { db } = createFakeDb({ subscriptionStatus: 'TRIALING' });
-  const status = await getSubscriptionStatus(db, 'org_1');
-  t.equal(status, null);
+  const row = await getSubscriptionRow(db, 'org_1');
+  t.equal(row, null);
   t.end();
 });
 
-test('getSubscriptionStatus propagates a query error (caller maps to 503)', async (t) => {
+test('getSubscriptionRow propagates a query error (caller maps to 503)', async (t) => {
   const { db } = createFakeDb({ failOn: 'select' });
   try {
-    await getSubscriptionStatus(db, 'org_1');
+    await getSubscriptionRow(db, 'org_1');
     t.fail('should have thrown');
   } catch (err) {
     t.match((err as Error).message, /connection reset/);
   }
+  t.end();
+});
+
+test('getSubscriptionRow carries the ladder fields, ISO normalized (AC-16)', async (t) => {
+  const calls: FakeCall[] = [];
+  const db: ControlQueryFn = async (strings, ...values) => {
+    const sql = strings.join('?').replace(/\s+/g, ' ').trim();
+    calls.push({ sql, values });
+    return [
+      {
+        status: 'TRIAL',
+        plan: null,
+        current_period_end: null,
+        stage_ends_at: new Date('2026-09-28T00:00:00.000Z'),
+      },
+    ];
+  };
+  const row = await getSubscriptionRow(db, 'org_1');
+  t.deepEqual(row, {
+    status: 'TRIAL',
+    plan: null,
+    currentPeriodEnd: null,
+    stageEndsAt: '2026-09-28T00:00:00.000Z',
+  });
+  t.match(
+    calls[0].sql,
+    /SELECT status, plan, current_period_end, stage_ends_at/
+  );
   t.end();
 });
 
@@ -152,7 +178,11 @@ test('syncSeatCap calls Clerk first with max_allowed_memberships, then records p
     fetch: wrappedFetch,
   });
 
-  t.deepEqual(order, ['clerk', 'db'], 'Clerk is updated before the local record');
+  t.deepEqual(
+    order,
+    ['clerk', 'db'],
+    'Clerk is updated before the local record'
+  );
   t.equal(clerkCalls.length, 1);
   t.match(clerkCalls[0].url, /\/v1\/organizations\/org_1$/);
   t.deepEqual(clerkCalls[0].body, { max_allowed_memberships: 3 });
