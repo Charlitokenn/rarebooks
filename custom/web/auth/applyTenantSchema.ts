@@ -13,14 +13,12 @@
  */
 import DatabaseCore from '../../../backend/database/core';
 import { getSchemas } from '../../../schemas';
+import { newTenantKnexConfig } from '../db/knexPgConfig';
 
-export async function applyTenantSchema(connectionString: string): Promise<void> {
-  const db = new DatabaseCore({
-    client: 'pg',
-    connection: connectionString,
-    pool: { min: 0, max: 1 },
-    useNullAsDefault: true,
-  });
+export async function applyTenantSchema(
+  connectionString: string
+): Promise<void> {
+  const db = new DatabaseCore(newTenantKnexConfig(connectionString));
 
   try {
     await db.connect();

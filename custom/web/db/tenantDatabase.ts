@@ -17,32 +17,39 @@
  *
  * The method name always comes over HTTP as a plain string, so it is
  * checked against ALLOWED_METHODS before anything is dispatched onto it.
- * This list mirrors backend/helpers.ts's databaseMethodSet, redefined here
- * rather than imported, since that file also pulls in fs and fs/promises,
- * real Node built-ins this Workers bundle has no reason to carry just for
- * one Set literal. 'close' is deliberately excluded: this module owns
- * opening and closing the connection itself around each call, a client
- * should never be able to trigger it directly.
+ * This list is the union of spec 0004's read/write split from
+ * custom/web/billing/subscriptionGate.ts (the same sets the gate classifies
+ * READ_ONLY refusals with; that file is the single source), which itself
+ * mirrors backend/helpers.ts's databaseMethodSet — redefined in code rather
+ * than imported from backend, since that file also pulls in fs and
+ * fs/promises, real Node built-ins this Workers bundle has no reason to
+ * carry just for one Set literal. 'close' is deliberately excluded: this
+ * module owns opening and closing the connection itself around each call, a
+ * client should never be able to trigger it directly. Bespoke dispatch is
+ * restricted to BESPOKE_READ_METHODS (every Web-dispatched bespoke query is
+ * a pure read, AC-10; the bespoke-reads structural test keeps that set
+ * complete), which also keeps Desktop's SQLite-only migrateExpenseDescription
+ * off the Web surface entirely.
  *
- * Spec: docs/specs/0002-tenant-schema-data-layer.md (AC-2, AC-3)
+ * Spec: docs/specs/0002-tenant-schema-data-layer.md (AC-2, AC-3),
+ * docs/specs/0004-paypal-subscriptions.md (AC-10)
  */
 import DatabaseCore from '../../../backend/database/core';
 import { getSchemas } from '../../../schemas';
+import { newTenantKnexConfig } from './knexPgConfig';
 import { BespokeQueries } from '../../../backend/database/bespoke';
+import {
+  BESPOKE_READ_METHODS,
+  READ_DB_METHODS,
+  WRITE_DB_METHODS,
+} from '../billing/subscriptionGate';
 import type { BespokeFunction } from '../../../backend/database/types';
 import type { DatabaseMethod } from '../../../utils/db/types';
 import type { SchemaMap } from '../../../schemas/types';
 
-const ALLOWED_METHODS: ReadonlySet<string> = new Set<DatabaseMethod>([
-  'insert',
-  'get',
-  'getAll',
-  'getSingleValues',
-  'rename',
-  'update',
-  'delete',
-  'deleteAll',
-  'exists',
+const ALLOWED_METHODS: ReadonlySet<string> = new Set<string>([
+  ...READ_DB_METHODS,
+  ...WRITE_DB_METHODS,
 ]);
 
 export class InvalidDatabaseMethodError extends Error {
@@ -52,12 +59,7 @@ export class InvalidDatabaseMethodError extends Error {
 }
 
 function newTenantDb(connectionString: string): DatabaseCore {
-  const db = new DatabaseCore({
-    client: 'pg',
-    connection: connectionString,
-    pool: { min: 0, max: 1 },
-    useNullAsDefault: true,
-  });
+  const db = new DatabaseCore(newTenantKnexConfig(connectionString));
   // No custom fields are read here: the schema shape a CRUD call needs is
   // the one already migrated onto this tenant project. Reading a tenant's
   // own CustomField rows (the way DatabaseManager.setRawCustomFields does on
@@ -94,7 +96,7 @@ export async function callTenantBespokeMethod(
   method: string,
   args: unknown[]
 ): Promise<unknown> {
-  if (!Object.prototype.hasOwnProperty.call(BespokeQueries, method)) {
+  if (!BESPOKE_READ_METHODS.has(method)) {
     throw new InvalidDatabaseMethodError(method);
   }
 
