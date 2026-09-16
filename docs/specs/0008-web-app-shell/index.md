@@ -8,7 +8,7 @@ _Build contract only; the decision history (Context, Options considered, Rationa
 ## Summary
 
 
-The signed-in web app today is a handful of standalone pages (dashboard, settings, billing) that talk to the tenant database directly. This spec mounts the real desktop bookkeeping UI inside the web client: the same sidebar, list views, and forms Electron users see, fed by the existing worker API routes. The trick is that 49 files import the desktop app instance through one module path, `src/initFyo`, which is Electron bound; the web build swaps that path for a web version at bundle time, so the desktop files keep their imports untouched. The first slice proves the shell with one record type, Customer, listed and edited end to end through the worker, with the subscription gate still enforced.
+The signed-in web app today is a handful of standalone pages (dashboard, settings, billing) that talk to the tenant database directly. This spec mounts the real desktop bookkeeping UI inside the web client: the same sidebar, list views, and forms Electron users see, fed by the existing worker API routes. The trick is that 49 files import the desktop app instance through one module path, `src/initFyo`, which is Electron bound; the web build swaps that path for a web version at bundle time, so the desktop files keep their imports untouched. The first slice proves the shell with the Party Customers view, listed and edited end to end through the worker, with the subscription gate still enforced.
 
 ## Requirements
 
@@ -20,10 +20,10 @@ The signed-in web app today is a handful of standalone pages (dashboard, setting
 
 **Acceptance criteria**:
 - **AC-1**: A signed-in user whose tenant is READY and who opens `/` sees the app chrome (sidebar plus workspace) with the current Dashboard content (org summary, links to Settings and Billing, sign out) as the shell home. The standalone dashboard page is replaced, not kept beside it.
-- **AC-2**: From the shell, navigating to Customer shows the tenant's customer list rendered by the shared desktop list components, paginated and filtered, through the existing worker routes. Data calls use only methods the worker's dispatch allowlist already carries; if the list path needs one it lacks (e.g. `count`), the build adds it to the allowlist and the gate's read/write classification, never a new route.
-- **AC-3**: Creating a Customer in the web shell and editing an existing one persist through the shared code path (`Doc` sync to `POST /api/db/call`), the row exists in the tenant database after a reload, and series numbering behaves the same as desktop (the client computes the name through the shared naming code over the worker CRUD path, as desktop does).
-- **AC-4**: Deleting a record from the shared list selection works on web through the same path. Server-side link protection (a Customer with linked Invoices refuses deletion) surfaces as the error display desktop already shows.
-- **AC-5**: The boot guard wraps every chrome route, so opening or reloading a deep link such as `/list/Customer` directly gates on boot too. While the tenant database connects, the route shows a full page loading state. When the tenant is not READY, or connecting fails, a status screen offers tenant status, retry, and sign out. The shell never renders half-booted on any route.
+- **AC-2**: From the shell, navigating to Sales → Customers opens `/list/Party/Customers` and shows the tenant's Party rows whose role is `Customer` or `Both`, rendered by the shared desktop list components, paginated and filtered through the existing worker routes. Data calls use only methods the worker's dispatch allowlist already carries; if the list path needs one it lacks (e.g. `count`), the build adds it to the allowlist and the gate's read/write classification, never a new route.
+- **AC-3**: Creating a Party from the Customers view and editing an existing one persist through the shared code path (`Doc` sync to `POST /api/db/call`), and the row exists in the tenant database after a reload. Party uses manual naming: the user-entered `name` is the primary key and no series-generated Customer name is requested from the server.
+- **AC-4**: Deleting a Party from the shared Customers list selection works on web through the same path. Server-side link protection (a Party linked to an Invoice refuses deletion) surfaces as the error display desktop already shows.
+- **AC-5**: The boot guard wraps every chrome route, so opening or reloading the Customers list deep link `/list/Party/Customers` or a Party form deep link `/edit/Party/<name>` directly gates on boot too. While the tenant database connects, the route shows a full page loading state. When the tenant is not READY, or connecting fails, a status screen offers tenant status, retry, and sign out. The shell never renders half-booted on any route.
 - **AC-6**: Every tenant-data route stays behind the feature 08 gate unchanged: a CANCELLED or missing subscription means `402` and the existing redirect to `/billing`; a READ_ONLY tenant can still browse lists and forms and only its saves bounce. This slice ships no new gate UI.
 - **AC-7**: The 49 files importing `from 'src/initFyo'` are not edited; neither are the files importing `from 'src/router'` (`src/utils/ui.ts`, `Sidebar.vue`). In the web bundle both module paths resolve to web variants (same alias mechanism), and the shell replicates App.vue's provide set (shortcuts, searcher, language direction, keys) so injected chrome works. The desktop bundle is untouched. No `ReferenceError` from the desktop singleton during web boot.
 - **AC-8**: Shared-code edits (the language loader, the sidebar's external-link open, hiding Electron-only actions like list export and print) keep desktop behavior identical, guarded on the platform flag; guards read `fyo.isElectron` through the injected or aliased fyo, which keeps them declarative (what platform am I on), while the behavior itself stays behind the demux or an equivalent web-safe call, honoring the `AGENTS.md` rule that platform knowledge flows through `fyo/demux` (raw `window.ipc` calls in `src/utils/ui.ts` predate that rule; each one this slice touches moves to a demux-backed call for both platforms). The desktop build (`npm run build`) and desktop dev launch still work, and `npm run test` stays green.
@@ -41,7 +41,7 @@ The web bundle resolves the two shared module paths the desktop chrome imports (
 
 
 **Data model sketch**:
-No new persisted entities. The shell is pure client wiring over the existing tenant schema (spec 0002) plus Clerk's existing org membership. The customer view uses the accounting schema's existing `Customer` doctype (name, fullName, email/phone/address fields, server-generated series name). Web-only client state (which org booted, boot status) lives in memory and `sessionStorage`, as today.
+No new persisted entities. The shell is pure client wiring over the existing tenant schema (spec 0002) plus Clerk's existing org membership. `/list/Party/Customers` is a filtered view of the existing `Party` doctype, including rows whose role is `Customer` or `Both`; Party stores contact fields such as email, phone, and address, and uses the required, user-entered `name` as its manual primary key rather than generating a series name. Web-only client state (which org booted, boot status) lives in memory and `sessionStorage`, as today.
 
 **State transitions** (shell boot state machine, client side):
 `idle` (signed-in route, not booted) → `booting` (loader, `ensureWebFyoReady` in flight, deduped per org) → `ready` (chrome renders) → `switching` (org switch, reset then booting for the new org) and → `unavailable` (tenant not READY, connect failure, or 401: status screen with retry and sign out). A 402 from any data call routes to `/billing` through the existing global net, leaving the state machine alone.
@@ -59,13 +59,13 @@ No new persisted entities. The shell is pure client wiring over the existing ten
 | Action | Value produced / displayed | Source |
 |---|---|---|
 | Boot shell for current org | which tenant database to connect | Clerk active organization (`useClerkAuth` in `src/web/`), resolved to the tenant connection by the worker control plane (spec 0001) |
-| Customer list | the rows | `GET` of the tenant database scoped by the per-tenant connection (no `org_id` column; isolation is one database per org, spec 0001) |
+| Party Customers list | Party rows with role `Customer` or `Both` | `GET` of the tenant database scoped by the per-tenant connection (no `org_id` column; isolation is one database per org, spec 0001) |
 | Status screen | tenant status | `GET /api/dashboard` response (the pre-check `ensureWebFyoReady` already calls) |
 | 402 redirect | subscription state | `code` and `status` fields in the worker's 402 body (spec 0003) |
 | Sidebar entry enabled state | which routes are live | client-side constant list of mounted routes, set by this build (decided here, not a data value) |
 | Org switcher entries | the orgs one user belongs to | Clerk SDK `user.organizationMemberships` (client SDK data) |
 | Displayed strings | translations | `rendererWeb.ts` sets `fyo.store.language = 'English'` and never installs the IPC-backed language map, so `t` falls through to the source string. English passthrough is the mechanism, not a hidden default. |
-| New Customer name | the series number | existing server-side doc creation path through `/api/db/call` (same code desktop runs) |
+| New Party name | the manually entered `name` primary key | shared Party form state persisted through `/api/db/call` (same code desktop runs; no series lookup) |
 
 **Key invariants**:
 - Exactly one web `fyo` instance exists per booted org; an org switch resets before booting the next, so no stale schema or db handle survives a switch.
@@ -78,8 +78,8 @@ No new persisted entities. The shell is pure client wiring over the existing ten
 None. No new env vars, worker secrets, or Clerk settings beyond the existing org-membership session already configured for the standalone pages.
 
 **Critical test scenarios** (each maps to an acceptance criterion):
-- Happy path: signed in, READY tenant, `/` shows chrome; navigate to Customer, create one, reload, find it in the list; edit it, reload, edits persisted, verifies **AC-1**, **AC-2**, **AC-3**
-- Happy path: delete an unused Customer from the list selection; it disappears after reload, verifies **AC-4**
+- Happy path: signed in, READY tenant, `/` shows chrome; navigate to `/list/Party/Customers`, create a manually named Party, reload, find it in the list; edit it through `/edit/Party/<name>`, reload, edits persisted, verifies **AC-1**, **AC-2**, **AC-3**
+- Happy path: delete an unused Party from the Customers list selection; it disappears after reload, verifies **AC-4**
 - Failure case: tenant at `PROJECT_CREATED` (schema not applied): status screen with retry and sign out, never a half-mounted shell; recover after the tenant reaches READY, verifies **AC-5**
 - Failure case: cancel the subscription, then browse (reads pass or gate bounces per spec 0003) and try a save under READ_ONLY: the redirect to `/billing` fires from inside the shell, and READ_ONLY browsing of lists keeps working, verifies **AC-6**
 - Permission: switch org A to org B in the switcher; org B's list shows only org B's customers; an in-flight A request cannot land data in the B session, verifies **AC-9**

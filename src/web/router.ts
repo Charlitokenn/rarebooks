@@ -37,6 +37,23 @@ const ListView = () => import('src/pages/ListView/ListView.vue');
 const QuickEditForm = () => import('src/pages/QuickEditForm.vue');
 const CommonForm = () => import('src/pages/CommonForm/CommonForm.vue');
 
+function parseRouteFilters(filterString: unknown): Record<string, unknown> {
+  if (typeof filterString !== 'string') {
+    return {};
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(filterString);
+    if (parsed === null || typeof parsed !== 'object') {
+      return {};
+    }
+
+    return { ...(parsed as Record<string, unknown>) };
+  } catch {
+    return {};
+  }
+}
+
 const routes: RouteRecordRaw[] = [
   // Auth + standalone pages, outside the shell (kept from feature 0001).
   { path: '/sign-in/:pathMatch(.*)*', component: SignIn },
@@ -64,11 +81,7 @@ const routes: RouteRecordRaw[] = [
             const { schemaName } = route.params;
             const pageTitle = route.params.pageTitle ?? '';
 
-            const filters = {};
-            const filterString = route.query.filters;
-            if (typeof filterString === 'string') {
-              Object.assign(filters, JSON.parse(filterString));
-            }
+            const filters = parseRouteFilters(route.query.filters);
 
             return {
               schemaName,

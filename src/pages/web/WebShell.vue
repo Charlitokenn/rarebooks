@@ -114,6 +114,7 @@ export default defineComponent({
   setup() {
     const keys = useKeys();
     const searcher: Ref<null | Search> = ref(null);
+    const searcherOrgId: Ref<string | null> = ref(null);
     const shortcuts = new Shortcuts(keys);
     const languageDirection = ref(
       getLanguageDirection(systemLanguageRef.value)
@@ -146,6 +147,7 @@ export default defineComponent({
     return {
       keys,
       searcher,
+      searcherOrgId,
       shortcuts,
       languageDirection,
       state: shellState,
@@ -172,10 +174,14 @@ export default defineComponent({
       this.darkMode = darkMode;
       // Mirror App.vue.setSearcher: the injected searcher is populated
       // against the booted fyo so SearchBar works inside list/form headers.
-      if (!this.searcher) {
-        this.searcher = new Search(fyo);
-        await this.searcher.initializeKeywords();
+      const bootedOrgId = shellBootedOrgId.value;
+      if (this.searcher && this.searcherOrgId === bootedOrgId) {
+        return;
       }
+
+      this.searcher = new Search(fyo);
+      this.searcherOrgId = bootedOrgId;
+      await this.searcher.initializeKeywords();
     },
     onRetry(): void {
       if (this.state.kind === 'unavailable' && this.state.canCreateOrg) {
