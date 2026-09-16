@@ -41,7 +41,14 @@
           </div>
         </div>
       </div>
-      <Button ref="exportButton" :icon="false" @click="openExportModal = true">
+      <!-- Export writes through the Electron file dialogs; hidden on Web
+           until an export path exists there (spec 0008 AC-8, AC-10). -->
+      <Button
+        v-if="fyo.isElectron"
+        ref="exportButton"
+        :icon="false"
+        @click="openExportModal = true"
+      >
         {{ t`Export` }}
       </Button>
       <FilterDropdown

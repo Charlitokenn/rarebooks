@@ -3,6 +3,7 @@
  * Basically anything that may directly or indirectly import a Vue file.
  */
 import { t } from 'fyo';
+import { getShellDemux } from 'fyo/demux/shell';
 import type { Doc } from 'fyo/model/doc';
 import { Action } from 'fyo/model/types';
 import { getActions } from 'fyo/utils';
@@ -480,9 +481,9 @@ export async function selectTextFile(filters?: SelectFileOptions['filters']) {
     title: t`Select File`,
     filters,
   };
-  const { success, canceled, filePath, data, name } = await ipc.selectFile(
-    options
-  );
+  const { success, canceled, filePath, data, name } = await getShellDemux(
+    fyo.isElectron
+  ).selectFile(options);
 
   if (canceled || !success) {
     showToast({
@@ -1013,18 +1014,19 @@ export const paperSizeMap: Record<
 };
 
 export function showExportInFolder(message: string, filePath: string) {
+  const demux = getShellDemux(fyo.isElectron);
   showToast({
     message,
     actionText: t`Open Folder`,
     type: 'success',
     action: () => {
-      ipc.showItemInFolder(filePath);
+      demux.showItemInFolder(filePath);
     },
   });
 }
 
 export async function deleteDb(filePath: string) {
-  const { error } = await ipc.deleteFile(filePath);
+  const { error } = await getShellDemux(fyo.isElectron).deleteFile(filePath);
 
   if (error?.code === 'EBUSY') {
     await showDialog({
@@ -1053,18 +1055,13 @@ export async function deleteDb(filePath: string) {
 }
 
 export async function getSelectedFilePath() {
-  return ipc.getOpenFilePath({
-    title: t`Select file`,
-    properties: ['openFile'],
-    filters: [{ name: 'SQLite DB File', extensions: ['db'] }],
-  });
+  return getShellDemux(fyo.isElectron).getOpenFilePath(t`Select file`);
 }
 
 export async function getSavePath(name: string, extention: string) {
-  const response = await ipc.getSaveFilePath({
-    title: t`Select folder`,
-    defaultPath: `${name}.${extention}`,
-  });
+  const response = await getShellDemux(fyo.isElectron).getSaveFilePath(
+    `${name}.${extention}`
+  );
 
   const canceled = response.canceled;
   let filePath = response.filePath;

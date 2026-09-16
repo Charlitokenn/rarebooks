@@ -1,11 +1,12 @@
 import { t } from 'fyo';
 import type { Doc } from 'fyo/model/doc';
+import { getShellDemux } from 'fyo/demux/shell';
 import { BaseError } from 'fyo/utils/errors';
 import { ErrorLog } from 'fyo/utils/types';
 import { truncate } from 'lodash';
 import { showDialog } from 'src/utils/interactive';
-import { fyo } from './initFyo';
-import router from './router';
+import { fyo } from 'src/initFyo';
+import router from 'src/router';
 import { getErrorMessage, stringifyCircular } from './utils';
 import type { DialogOptions, ToastOptions } from './utils/types';
 import { ModelNameEnum } from 'models/types';
@@ -42,7 +43,7 @@ export async function sendError(errorLogObj: ErrorLog) {
     console.log('sendError', body);
   }
 
-  await ipc.sendError(JSON.stringify(body));
+  await getShellDemux(fyo.isElectron).sendError(JSON.stringify(body));
 }
 
 function getToastProps(errorLogObj: ErrorLog) {
@@ -153,7 +154,7 @@ export async function showErrorDialog(title?: string, content?: string) {
   // To be used for  show stopper errors
   title ??= t`Error`;
   content ??= t`Something has gone terribly wrong. Please check the console and raise an issue.`;
-  await ipc.showError(title, content);
+  await getShellDemux(fyo.isElectron).showError(title, content);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -283,7 +284,7 @@ function getIssueUrlQuery(errorLogObj?: ErrorLog): string {
 
 export function reportIssue(errorLogObj?: ErrorLog) {
   const urlQuery = getIssueUrlQuery(errorLogObj);
-  ipc.openExternalUrl(urlQuery);
+  getShellDemux(fyo.isElectron).openExternalUrl(urlQuery);
 }
 
 function getErrorLabel(error: Error) {

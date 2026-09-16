@@ -19,6 +19,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 06 | Web platform foundation & control plane | Phase 4: Web Migration | in-progress |
 | 07 | Tenant schema & data layer | Phase 4: Web Migration | in-progress |
 | 08 | Subscription gating & seat sync | Phase 4: Web Migration | in-progress |
+| 14 | Web app shell (desktop UI on web) | Phase 4: Web Migration | in-progress |
 | 09 | PayPal subscriptions (non Tanzania payments) | Phase 4: Web Migration | in-progress |
 | 10 | Lipa Namba manual payments (Tanzania payments) & admin review | Phase 4: Web Migration | planned |
 | 11 | Web notifications (ntfy) | Phase 4: Web Migration | in-progress |
@@ -104,6 +105,28 @@ Implement access control, the thing that replaces Keymint on Web: subscription s
 - [ ] Review it: `/check review subscription gating & seat sync`
 - [ ] Document it: `/document subscription gating & seat sync`
   Spec 0003. code in `custom/web/billing/`, `worker/middleware/subscription-gate.ts`, `worker/routes/subscription-status.ts`, `worker/routes/db.ts`, `worker/index.ts`, `scripts/seed-subscription.ts`, `src/pages/web/Billing.vue`, `src/web/subscription.ts`, `src/web/router.ts`, `fyo/demux/db.ts`, `fyo/utils/errors.ts`, `utils/ipc/types.ts`, `rendererWeb.ts`
+
+### 14. Web app shell (desktop UI on web) · in-progress
+Mount the desktop bookkeeping UI inside the web client, so a signed in tenant browses the real app (navigation, list and form views) instead of the standalone pages. First slice: the shell plus one doctype view working end to end through the worker. Enrolled 2026-09-15 because nothing on the plan owned it, while feature 11's Settings work already assumes a shell exists to expose it, and Charles wants to explore the UI in a browser.
+**Done when:** a signed in user with a `READY` tenant reaches the app shell, navigates to one doctype, and sees its records listed and editable through the same shared components Desktop uses, with the feature 08 subscription gate still enforced.
+- [x] Design it (spec): `/architect web app shell`
+  Spec [0008](../specs/0008-web-app-shell/index.md), written 2026-09-15 (build-time module alias swap for `src/initFyo` and `src/router`; an independent cross-check closed six completeness gaps before acceptance). Depends on 07 and 08. Does not depend on 09 or 10. `rendererWeb.ts` documents why `src/renderer.ts` and `src/utils/language.ts` cannot be reused as is (Electron `ipc` globals, the desktop `fyo` singleton); the shell slice has to answer the same question for the rest of the desktop chrome.
+- [ ] Build it: `/develop web app shell`
+  - [x] Alias swap, `src/router` web variant, App.vue provider set, language loader refactor, satisfies AC-7, AC-8
+    Built 2026-09-15. boot.ts keeps its concrete `src/initFyoWeb` import (the alias unifies module identity on web anyway; the aliased specifier would crash the ts-node test runner against the desktop singleton); three relative bypass specifiers were fixed, not two (`errorHandling.ts` ×2, `Sidebar.vue` ×1).
+  - [x] Shell mount: guarded chrome routes, dashboard as shell home, Customer list and edit routes, satisfies AC-1, AC-2, AC-5
+    Built 2026-09-15. Note: the first doctype is `Party` (the Customers sidebar entry routes to `/list/Party/Customers`; there is no standalone Customer doctype), list/edit routes mirror the desktop shapes and are lazy.
+  - [ ] Customer create, edit, delete round trip; fresh-tenant Company and NumberSeries precondition check; gate behavior from inside the shell, satisfies AC-3, AC-4, AC-6
+    Round-trip wiring landed with the shell mount; the allowlist check (spec task 5) and the fresh-tenant precondition check (task 6) both resolved no-change (Party is manual-named, seeds nothing it needs). The live 402/READ_ONLY reproduction against staging (spec task 8) is pending for `/check verify`.
+  - [x] Org switcher with boot epoch and stale-response discard, satisfies AC-9
+    Built 2026-09-15: Sidebar footer switcher + sign out, `utils/db/bootEpoch.ts` checked around every web db fetch (`BootSwitchedError` discards stale responses and surfaces in-flight saves as failed).
+  - [ ] Platform guards on Electron-only actions, disabled sidebar entries, desktop regression pass, satisfies AC-8, AC-10, AC-7
+    Guards and disabled entries built 2026-09-15 (all touched raw `ipc` moved to `fyo/demux/shell.ts`). Regression partial: desktop renderer+main build green, typecheck/lint add zero new errors; `npm run test` cannot run on this machine (pre-existing: `scripts/runner.sh` needs zsh, and the specs hit pre-existing TS/fetch issues at baseline), full `npm run build` stops in electron-builder on a pre-existing `mac.notarize` config error; desktop dev-launch and live web smoke pending.
+  code in `src/createFyo.ts`, `src/initFyoWeb.ts`, `src/web/router.ts`, `src/web/shell.ts`, `src/web/shellState.ts`, `src/pages/web/WebShell.vue`, `src/pages/web/ShellHome.vue`, `src/utils/webLive.ts`, `fyo/demux/shell.ts`, `utils/db/bootEpoch.ts`, edits in `vite.config.web.ts`, `rendererWeb.ts`, `src/initFyo.ts`, `src/errorHandling.ts`, `src/utils/ui.ts`, `src/utils/language.ts`, `src/components/Sidebar.vue`, `src/components/SearchBar.vue`, `src/components/Controls/AttachImage.vue`, `src/components/Controls/LanguageSelector.vue`, `src/pages/ListView/ListView.vue`, `src/pages/CommonForm/CommonForm.vue`, `fyo/demux/db.ts`, `fyo/utils/errors.ts`, `src/App.vue`, `src/renderer.ts`
+- [ ] Verify it: `/check verify web app shell`
+- [ ] Test it: `/test web app shell`
+- [ ] Review it: `/check review web app shell`
+- [ ] Document it: `/document web app shell`
 
 ### 09. PayPal subscriptions (non Tanzania payments) · in-progress
 Recurring subscription billing for tenants outside Tanzania, plus the full entitlement ladder (14 day own clock trial, 7 day grace, 5 day read only, then locked) that spec 0003's gate enforces.

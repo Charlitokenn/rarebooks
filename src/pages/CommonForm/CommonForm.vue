@@ -36,8 +36,10 @@
       >
         <feather-icon name="link" class="w-4 h-4"></feather-icon>
       </Button>
+      <!-- PrintView isn't mounted on Web yet; routing there would dead-end
+           (spec 0008 AC-10), and its ipc-backed PDF path is Desktop-only. -->
       <Button
-        v-if="canPrint"
+        v-if="canPrint && fyo.isElectron"
         ref="printButton"
         :icon="true"
         :title="t`Open Print View`"

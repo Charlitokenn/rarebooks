@@ -47,16 +47,16 @@
             px-4
             flex
             items-center
-            cursor-pointer
-            hover:bg-gray-100
-            dark:hover:bg-gray-875
             h-10
           "
-          :class="
-            isGroupActive(group) && !group.items
+          :class="[
+            isEntryDisabled(group)
+              ? 'cursor-default opacity-40'
+              : 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-875',
+            isGroupActive(group) && !group.items && !isEntryDisabled(group)
               ? 'bg-gray-100 dark:bg-gray-875 border-s-4 border-gray-800 dark:border-gray-100'
-              : ''
-          "
+              : '',
+          ]"
           @click="routeToSidebarItem(group)"
         >
           <Icon
@@ -78,6 +78,12 @@
           >
             {{ group.label }}
           </div>
+          <div
+            v-if="isEntryDisabled(group)"
+            class="ms-2 text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500"
+          >
+            {{ t`coming soon` }}
+          </div>
         </div>
 
         <!-- Expanded Group -->
@@ -89,21 +95,27 @@
               text-base
               h-10
               ps-10
-              cursor-pointer
               flex
               items-center
-              hover:bg-gray-100
-              dark:hover:bg-gray-875
             "
-            :class="
+            :class="[
               isItemActive(item)
                 ? 'bg-gray-100 dark:bg-gray-875 text-gray-900 dark:text-gray-100 border-s-4 border-gray-800 dark:border-gray-100'
-                : 'text-gray-700 dark:text-gray-400'
-            "
+                : 'text-gray-700 dark:text-gray-400',
+              isEntryDisabled(item)
+                ? 'cursor-default opacity-40'
+                : 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-875',
+            ]"
             @click="routeToSidebarItem(item)"
           >
             <p :style="isItemActive(item) ? 'margin-left: -4px' : ''">
               {{ item.label }}
+            </p>
+            <p
+              v-if="isEntryDisabled(item)"
+              class="ms-2 text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500"
+            >
+              {{ t`coming soon` }}
             </p>
           </div>
         </div>
@@ -148,7 +160,7 @@
       </button>
 
       <button
-        v-if="isSuperAdmin"
+        v-if="isSuperAdmin && fyo.isElectron"
         data-testid="change-db"
         class="
           flex
@@ -164,6 +176,59 @@
         <feather-icon name="database" class="h-4 w-4 flex-shrink-0" />
         <p>{{ t`Change DB` }}</p>
       </button>
+
+      <!-- Web shell: organization switcher + sign out (spec 0008 AC-1, AC-9),
+           in place of Desktop's Change DB. webShell is injected only inside
+           the shell, so this block never renders on Desktop. -->
+      <template v-if="webShell">
+        <div
+          v-if="webShell.organizations.length > 0"
+          class="flex flex-col gap-1"
+        >
+          <label class="text-xs text-gray-500 dark:text-gray-400 select-none">
+            {{ t`Organization` }}
+          </label>
+          <select
+            class="
+              text-sm
+              bg-white
+              dark:bg-gray-800
+              text-gray-700
+              dark:text-gray-200
+              border border-gray-200 dark:border-gray-700
+              rounded
+              px-2 py-1
+              w-full
+            "
+            :value="webShell.bootedOrgId ?? ''"
+            @change="onOrgChange"
+          >
+            <option
+              v-for="org in webShell.organizations"
+              :key="org.id"
+              :value="org.id"
+            >
+              {{ org.name }}
+            </option>
+          </select>
+        </div>
+
+        <button
+          class="
+            flex
+            text-sm text-gray-600
+            dark:text-gray-500
+            hover:text-gray-800
+            dark:hover:text-gray-400
+            gap-1
+            items-center
+          "
+          @click="webShell?.signOut()"
+        >
+          <feather-icon name="log-out" class="h-4 w-4 flex-shrink-0" />
+          <p>{{ t`Sign out` }}</p>
+        </button>
+      </template>
 
       <button
         v-if="false"
@@ -221,15 +286,21 @@
   </div>
 </template>
 <script lang="ts">
+import { getShellDemux } from 'fyo/demux/shell';
 import { reportIssue } from 'src/errorHandling';
 import { fyo } from 'src/initFyo';
 import { languageDirectionKey, shortcutsKey } from 'src/utils/injectionKeys';
 import { docsPathRef } from 'src/utils/refs';
 import { getSidebarConfig } from '../../custom/src/utils/sidebarConfig';
 import { SidebarConfig, SidebarItem, SidebarRoot } from 'src/utils/types';
+import {
+  SidebarTarget,
+  webSidebarTarget,
+  webShellKey,
+} from 'src/utils/webLive';
 import { routeTo, toggleSidebar } from 'src/utils/ui';
 import { defineComponent, inject } from 'vue';
-import router from '../router';
+import router from 'src/router';
 import Icon from './Icon.vue';
 import Modal from './Modal.vue';
 import ShortcutsHelper from './ShortcutsHelper.vue';
@@ -250,6 +321,9 @@ export default defineComponent({
     return {
       languageDirection: inject(languageDirectionKey),
       shortcuts: inject(shortcutsKey),
+      // Provided only by the web shell; undefined on Desktop, where the
+      // footer keeps Change DB instead (spec 0008 AC-1, AC-9).
+      webShell: inject(webShellKey),
     };
   },
   data() {
@@ -280,7 +354,7 @@ export default defineComponent({
   async mounted() {
     const { companyName } = await fyo.doc.getDoc('AccountingSettings');
     this.companyName = companyName as string;
-    this.username = '';
+    this.username = this.webShell?.userEmail ?? '';
     this.groups = await getSidebarConfig();
 
     this.setActiveGroup();
@@ -304,8 +378,27 @@ export default defineComponent({
     routeTo,
     reportIssue,
     toggleSidebar,
+    onOrgChange(event: Event) {
+      const orgId = (event.target as HTMLSelectElement).value;
+      if (orgId) {
+        this.webShell?.switchOrg(orgId);
+      }
+    },
+    /**
+     * On Web, sidebar entries whose route isn't mounted in the shell yet
+     * render disabled (spec 0008 AC-10); on Desktop every entry is live and
+     * this always returns false.
+     */
+    isEntryDisabled(entry: SidebarItem | SidebarRoot): boolean {
+      if (fyo.isElectron) {
+        return false;
+      }
+      return webSidebarTarget(entry) === null;
+    },
     openDocumentation() {
-      ipc.openLink('https://docs.frappe.io/' + docsPathRef.value);
+      getShellDemux(fyo.isElectron).openLink(
+        'https://docs.frappe.io/' + docsPathRef.value
+      );
     },
     setActiveGroup() {
       const { fullPath } = this.$router.currentRoute.value;
@@ -351,9 +444,16 @@ export default defineComponent({
       return this.activeGroup && group.label === this.activeGroup.label;
     },
     routeToSidebarItem(item: SidebarItem | SidebarRoot) {
-      routeTo(this.getPath(item));
+      if (this.isEntryDisabled(item)) {
+        return;
+      }
+
+      // On Web a group's own route may not be mounted yet while one of its
+      // items is (Customers under Sales): go to that first live descendant.
+      const target = fyo.isElectron ? item : webSidebarTarget(item)!;
+      routeTo(this.getPath(target));
     },
-    getPath(item: SidebarItem | SidebarRoot) {
+    getPath(item: SidebarItem | SidebarRoot | SidebarTarget) {
       const { route: path, filters } = item;
       if (!filters) {
         return path;

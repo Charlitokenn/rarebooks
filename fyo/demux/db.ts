@@ -1,8 +1,10 @@
 import {
+  BootSwitchedError,
   DatabaseError,
   NotImplemented,
   SubscriptionInactiveError,
 } from 'fyo/utils/errors';
+import { getBootEpoch } from 'utils/db/bootEpoch';
 import {
   SUBSCRIPTION_INACTIVE_CODE,
   type SubscriptionWireStatus,
@@ -50,6 +52,7 @@ export class DatabaseDemux extends DatabaseDemuxBase {
    * Spec: docs/specs/0001-web-platform-foundation-control-plane.md (AC-6)
    */
   async #fetchBackend(path: string, init?: RequestInit): Promise<BackendResponse> {
+    const epochAtStart = getBootEpoch();
     try {
       const res = await fetch(path, {
         ...init,
@@ -67,6 +70,7 @@ export class DatabaseDemux extends DatabaseDemuxBase {
           code?: string;
           status?: SubscriptionWireStatus;
         };
+        this.#assertSameBoot(epochAtStart);
         return {
           error: {
             name: `HTTP${res.status}`,
@@ -77,14 +81,31 @@ export class DatabaseDemux extends DatabaseDemuxBase {
         };
       }
 
-      return { data: await res.json() };
+      const data: unknown = await res.json();
+      this.#assertSameBoot(epochAtStart);
+      return { data };
     } catch (err) {
+      if (err instanceof BootSwitchedError) {
+        throw err;
+      }
       return {
         error: {
           name: 'NetworkError',
           message: err instanceof Error ? err.message : String(err),
         },
       };
+    }
+  }
+
+  /**
+   * Spec 0008 AC-9: if the organization switched while this request was in
+   * flight, the response belongs to the old tenant. Discard it by failing
+   * the call loudly — an in-flight save surfaces as failed rather than
+   * landing in (or applying against) the newly booted organization.
+   */
+  #assertSameBoot(epochAtStart: number): void {
+    if (getBootEpoch() !== epochAtStart) {
+      throw new BootSwitchedError();
     }
   }
 

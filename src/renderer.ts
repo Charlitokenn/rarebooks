@@ -16,7 +16,7 @@ import { setLanguageMap } from './utils/language';
 (async () => {
   const language = fyo.config.get('language') as string;
   if (language) {
-    await setLanguageMap(language);
+    await setLanguageMap(fyo, language);
   }
   fyo.store.language = language || 'English';
 
