@@ -39,6 +39,14 @@ export default defineConfig({
   resolve: {
     alias: {
       vue: 'vue/dist/vue.esm-bundler.js',
+      // Spec 0008 AC-7: the desktop chrome's two shared module paths
+      // resolve to web variants in the web bundle only; the desktop
+      // bundle never sees these. Both must be listed BEFORE the broad
+      // `src` prefix alias below — Vite string aliases match by prefix,
+      // so `src` alone would swallow them. Rollup's exact-or-'/'-boundary
+      // matching keeps `src/initFyo` from swallowing `src/initFyoWeb`.
+      'src/initFyo': path.resolve(__dirname, './src/initFyoWeb.ts'),
+      'src/router': path.resolve(__dirname, './src/web/router.ts'),
       fyo: path.resolve(__dirname, './fyo'),
       src: path.resolve(__dirname, './src'),
       schemas: path.resolve(__dirname, './schemas'),

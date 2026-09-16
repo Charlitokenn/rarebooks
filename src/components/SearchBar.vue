@@ -245,6 +245,7 @@
 </template>
 
 <script lang="ts">
+import { getShellDemux } from 'fyo/demux/shell';
 import { fyo } from 'src/initFyo';
 import { getBgTextColorClass } from 'src/utils/colors';
 import { searcherKey, shortcutsKey } from 'src/utils/injectionKeys';
@@ -357,7 +358,9 @@ export default defineComponent({
   },
   methods: {
     openDocs() {
-      ipc.openLink('https://docs.frappe.io/' + docsPathMap.Search);
+      getShellDemux(fyo.isElectron).openLink(
+        'https://docs.frappe.io/' + docsPathMap.Search
+      );
     },
     getShortcuts() {
       const ifOpen = (cb: Function) => () => this.openModal && cb();

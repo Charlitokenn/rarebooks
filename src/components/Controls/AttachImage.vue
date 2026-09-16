@@ -68,6 +68,7 @@
   </div>
 </template>
 <script lang="ts">
+import { getShellDemux } from 'fyo/demux/shell';
 import { Field } from 'schemas/types';
 import { fyo } from 'src/initFyo';
 import { getDataURL } from 'src/utils/misc';
@@ -123,7 +124,11 @@ export default defineComponent({
         filters: [{ name: 'Image', extensions: Object.keys(mime_types) }],
       };
 
-      const { name, success, data } = await ipc.selectFile(options);
+      // The shell demux backs this: the Electron file dialog on Desktop, a
+      // DOM file input on Web (spec 0008 AC-8).
+      const { name, success, data } = await getShellDemux(
+        fyo.isElectron
+      ).selectFile(options);
 
       if (!success) {
         return;

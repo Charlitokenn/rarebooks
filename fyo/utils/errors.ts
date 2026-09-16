@@ -75,6 +75,24 @@ export class SubscriptionInactiveError extends BaseError {
   }
 }
 
+/**
+ * Raised by the web db demux when the active organization switched while a
+ * request was in flight (spec 0008 AC-9): the response belongs to the old
+ * tenant and must never land in the newly booted one, so the in-flight call
+ * surfaces as a failure instead of silently applying stale data. Not
+ * stored: it is a switch race, not an app fault.
+ */
+export class BootSwitchedError extends BaseError {
+  constructor(shouldStore = false) {
+    super(
+      499,
+      'The organization switched before this request completed',
+      shouldStore
+    );
+    this.name = 'BootSwitchedError';
+  }
+}
+
 export class CannotCommitError extends DatabaseError {
   constructor(message: string, shouldStore = true) {
     super(message, shouldStore);

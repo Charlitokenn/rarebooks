@@ -57,7 +57,7 @@ export default defineComponent({
         return;
       }
 
-      setLanguageMap(value, this.dontReload);
+      setLanguageMap(fyo, value, this.dontReload);
     },
   },
 });
