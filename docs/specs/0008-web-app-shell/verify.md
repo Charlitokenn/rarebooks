@@ -19,12 +19,18 @@ The first doctype is Party (the Customers view): the spec's "Customer" wording r
 
 ## Commands
 
-- [ ] `npx tsc --noEmit` → same 3 pre-existing errors only (db.ts:34, misc.ts:143, device-tag.ts:276), no new ones → AC-7, AC-8
-- [ ] `npx vue-tsc --noEmit` → 109 pre-existing errors, no new files appearing in the list (compare `/tmp/vuetsc_before.txt` method) → AC-7, AC-8
-- [ ] `npm run build -- --nopackage` → main + renderer build green (packaging step fails identically at baseline: pre-existing `mac.notarize` electron-builder config error) → AC-8
-- [ ] `npm run build:web` → green; then `grep -l "get-license-state" dist_web/assets/*.js` and `grep -l "license-state-changed" dist_web/assets/*.js` → no matches (desktop router excluded) → AC-7
+- [x] `npx tsc --noEmit` → same 3 pre-existing errors only (db.ts:34, misc.ts:143, device-tag.ts:276), no new ones → AC-7, AC-8
+  Ran 2026-09-16: 75 errors at HEAD, byte-identical to a baseline worktree at 89071e6b (pre-change): empty diff. The "3 errors" wording is stale (the three named are among the 75; the rest pre-date the slice); the no-new-errors intent passes. → AC-7, AC-8
+- [x] `npx vue-tsc --noEmit` → 109 pre-existing errors, no new files appearing in the list (compare `/tmp/vuetsc_before.txt` method) → AC-7, AC-8
+  Ran 2026-09-16: 109 errors, same file set as `/tmp/vuetsc_before.txt`; only line offsets inside already-erroring edited files (e.g. AttachImage.vue 132→137). → AC-7, AC-8
+- [x] `npm run build -- --nopackage` → main + renderer build green (packaging step fails identically at baseline: pre-existing `mac.notarize` electron-builder config error) → AC-8
+  Ran 2026-09-16: `✓ built in 32.63s` (main + renderer). → AC-8
+- [x] `npm run build:web` → green; then `grep -l "get-license-state" dist_web/assets/*.js` and `grep -l "license-state-changed" dist_web/assets/*.js` → no matches (desktop router excluded) → AC-7
+  Ran 2026-09-16: build green; both greps empty. Inverse check added: `WebShell`/`rendererWeb`/`initFyoWeb` absent from `dist_electron` bundle, `get-license-state` present there (desktop bundle untouched by the alias). → AC-7
 - [ ] `npm run test` → currently cannot run on this machine (pre-existing: `scripts/runner.sh` shebang `#!/usr/bin/env zsh`, zsh absent). Run on the engineer's macOS/Linux box with zsh, or after fixing the runner; must be green including `tests/webBoot.spec.ts` → AC-8
-- [ ] DevTools console on web shell boot → no `ReferenceError: ipc is not defined` anywhere → AC-7
+  Not run 2026-09-16: `npm run test` fails at the shebang (`env: 'zsh': No such file or directory`, pre-existing). Partial substitute: `tests/webBoot.spec.ts` run directly under node ts-node (transpile-only, moduleResolution override): 9/9 assertions green. Full suite still owed on a zsh box. → AC-8
+- [x] DevTools console on web shell boot → no `ReferenceError: ipc is not defined` anywhere → AC-7
+  Ran 2026-09-16 (unauthenticated; authenticated boot covered by the UI steps): headless chromium against `npm run dev:web:full` (Vite :5173 + wrangler :8787) loaded `/` and deep link `/list/Party/Customers`; zero ipc/ReferenceError console hits (only two expected 400 network logs from the unauthenticated `/api/dashboard`). Screenshots `/tmp/shell-unauth-root.png`, `/tmp/shell-unauth-deeplink.png`. → AC-7
 
 ## Value sourcing (each row of the spec's table, exercised behaviorally)
 
