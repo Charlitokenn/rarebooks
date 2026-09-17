@@ -44,6 +44,11 @@ export type WebFyoStatus =
   | 'READY'
   | 'PROVISIONING'
   | 'PROJECT_CREATED'
+  // A control-plane status (worker/db/resolve-tenant.ts's TenantStatus,
+  // worker/routes/dashboard.ts) that can legitimately flow through here —
+  // was missing from this union even though `tenantStatus as WebFyoStatus`
+  // below let it through unchecked at runtime.
+  | 'SUSPENDED'
   | 'NOT_SIGNED_IN'
   | 'UNKNOWN'
   | 'FAILED';

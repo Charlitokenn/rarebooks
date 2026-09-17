@@ -15,6 +15,7 @@
 import { SubscriptionInactiveError } from 'fyo/utils/errors';
 import { ensureWebFyoReady } from 'src/web/boot';
 import { clerk } from 'src/web/clerk';
+import { deriveBootShellState } from 'src/web/shellBootState';
 import {
   setShellBootedOrg,
   setShellOrganizations,
@@ -94,25 +95,10 @@ export function ensureShellReady(): Promise<void> {
         return;
       }
 
-      if (boot.status === 'READY') {
-        setShellState({ kind: 'ready' });
-      } else if (boot.status === 'PROVISIONING') {
-        // Still provisioning is a wait, not a dead end: keep the loader
-        // (AC-5) and let the next navigation or Retry re-check.
-        setShellState({
-          kind: 'booting',
-          detail: 'Your account is still being set up.',
-        });
-      } else if (boot.status === 'NOT_SIGNED_IN') {
+      if (boot.status === 'NOT_SIGNED_IN') {
         void router.replace('/sign-in');
       } else {
-        setShellState({
-          kind: 'unavailable',
-          detail:
-            boot.status === 'FAILED'
-              ? boot.error ?? 'Could not reach your data.'
-              : `Your account is not ready yet (status: ${boot.status}).`,
-        });
+        setShellState(deriveBootShellState(boot));
       }
     } catch (err) {
       if (!isActiveBoot(requested, currentPromise)) {
