@@ -34,6 +34,7 @@ import { neon } from 'pg';
 import DatabaseCore from '../../../backend/database/core';
 import { getSchemas } from '../../../schemas';
 import { newTenantKnexConfig } from './knexPgConfig';
+import { seedDefaultEntries } from './seedDefaultEntries';
 import type { RawCustomField } from '../../../backend/database/types';
 
 export type ControlQueryFn = (
@@ -199,6 +200,10 @@ export async function migrateTenantProject(
     }
     db.setSchemaMap(getSchemas('-', rawCustomFields));
     await db.migrate();
+    // Idempotent (checks existence per record) — safe on a tenant that was
+    // already seeded, and closes the gap for a PROJECT_CREATED tenant whose
+    // first (webhook) run never reached applyTenantSchema.ts's own seeding.
+    await seedDefaultEntries(db);
   } finally {
     await db.close();
   }

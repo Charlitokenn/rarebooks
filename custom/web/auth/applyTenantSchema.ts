@@ -14,6 +14,7 @@
 import DatabaseCore from '../../../backend/database/core';
 import { getSchemas } from '../../../schemas';
 import { newTenantKnexConfig } from '../db/knexPgConfig';
+import { seedDefaultEntries } from '../db/seedDefaultEntries';
 
 export async function applyTenantSchema(
   connectionString: string
@@ -28,6 +29,11 @@ export async function applyTenantSchema(
     // the same way DatabaseManager.getSchemaMap() does on Desktop.
     db.setSchemaMap(getSchemas('-', []));
     await db.migrate();
+    // Desktop's setup wizard seeds these same defaults (UOMs, the "Stores"
+    // Location) via createDefaultEntries() before a user ever sees the
+    // app; Web has no equivalent wizard step, so this is that seeding,
+    // done here so a Web tenant is never READY without them.
+    await seedDefaultEntries(db);
   } finally {
     await db.close();
   }
