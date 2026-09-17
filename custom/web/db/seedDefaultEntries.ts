@@ -5,7 +5,18 @@
  * raw DatabaseCore.insert() instead of Fyo's doc.sync(), since this runs on
  * the Worker / migration-runner side where there is no Fyo instance (no
  * model layer, no i18n), only the DatabaseCore this file's callers already
- * have open.
+ * have open. Mirrors backend/patches/addUOMs.ts, which does this same raw
+ * DatabaseCore.insert() dance for UOMs on Desktop's own patch/migration
+ * path — including spreading getDefaultMetaFieldValueMap() into every
+ * insert. Every non-single schema gets createdBy/modifiedBy/created/
+ * modified added as *required* fields (schemas/meta/base.json, applied via
+ * addMetaFields() in schemas/index.ts), which DatabaseCore's
+ * #buildColumnForTable turns into NOT NULL Postgres columns. Skipping
+ * these here does not fail loudly at the Knex layer — newTenantKnexConfig
+ * sets useNullAsDefault: true, so the missing fields quietly become NULL —
+ * it fails at Postgres's own not-null constraint instead, which
+ * handleOrganizationCreated.ts's caller catches and marks the tenant
+ * FAILED. This must never be called without spreading these defaults in.
  *
  * Idempotent by design (checks db.exists() before each insert), so it is
  * safe to call on every schema migrate() — not just once at first
@@ -18,6 +29,7 @@
  * keep these two lists in sync with that file if Desktop's defaults change.
  */
 import type DatabaseCore from '../../../backend/database/core';
+import { getDefaultMetaFieldValueMap } from '../../../backend/helpers';
 import { ModelNameEnum } from '../../../models/types';
 
 const DEFAULT_UOMS: { name: string; isWhole: boolean }[] = [
@@ -36,13 +48,19 @@ export async function seedDefaultEntries(db: DatabaseCore): Promise<void> {
     if (await db.exists(ModelNameEnum.UOM, uom.name)) {
       continue;
     }
-    await db.insert(ModelNameEnum.UOM, uom);
+    await db.insert(ModelNameEnum.UOM, {
+      ...uom,
+      ...getDefaultMetaFieldValueMap(),
+    });
   }
 
   for (const location of DEFAULT_LOCATIONS) {
     if (await db.exists(ModelNameEnum.Location, location.name)) {
       continue;
     }
-    await db.insert(ModelNameEnum.Location, location);
+    await db.insert(ModelNameEnum.Location, {
+      ...location,
+      ...getDefaultMetaFieldValueMap(),
+    });
   }
 }
