@@ -27,7 +27,22 @@ import { handleSubscriptionError } from 'src/web/subscription';
 import router from 'src/router';
 import { bumpBootEpoch } from 'utils/db/bootEpoch';
 
-let bootInFlight: Promise<void> | null = null;
+interface BootInFlight {
+  orgId: string;
+  promise: Promise<void>;
+}
+
+let bootInFlight: BootInFlight | null = null;
+
+function isActiveBoot(orgId: string, promise: Promise<void>): boolean {
+  return (
+    bootInFlight?.orgId === orgId &&
+    bootInFlight.promise === promise &&
+    shellBootedOrgId.value === orgId &&
+    clerk.session !== null &&
+    clerk.organization?.id === orgId
+  );
+}
 
 /**
  * Boot (or re-attempt) the shell for the Clerk active organization. The
@@ -36,6 +51,8 @@ let bootInFlight: Promise<void> | null = null;
  */
 export function ensureShellReady(): Promise<void> {
   if (!clerk.session) {
+    bootInFlight = null;
+    setShellBootedOrg(null);
     setShellState({
       kind: 'unavailable',
       detail: 'Please sign in to continue.',
@@ -46,6 +63,8 @@ export function ensureShellReady(): Promise<void> {
   const orgId = clerk.organization?.id ?? null;
 
   if (!orgId) {
+    bootInFlight = null;
+    setShellBootedOrg(null);
     setShellState({
       kind: 'unavailable',
       detail: 'No organization is active yet. Create one to get started.',
@@ -58,20 +77,20 @@ export function ensureShellReady(): Promise<void> {
     return Promise.resolve();
   }
 
-  if (bootInFlight !== null) {
-    return bootInFlight;
+  if (bootInFlight?.orgId === orgId) {
+    return bootInFlight.promise;
   }
 
   setShellBootedOrg(orgId);
   setShellState({ kind: 'booting' });
   const requested = orgId;
 
-  bootInFlight = (async () => {
+  const currentPromise = Promise.resolve().then(async () => {
     try {
       const boot = await ensureWebFyoReady(requested);
       // Clerk moved on (sign-out or a quick second switch) while we were
       // connecting: that transition owns the state now.
-      if (shellBootedOrgId.value !== requested) {
+      if (!isActiveBoot(requested, currentPromise)) {
         return;
       }
 
@@ -96,6 +115,10 @@ export function ensureShellReady(): Promise<void> {
         });
       }
     } catch (err) {
+      if (!isActiveBoot(requested, currentPromise)) {
+        return;
+      }
+
       if (err instanceof SubscriptionInactiveError) {
         // A 402 while connecting (e.g. the subscription was cancelled):
         // route to /billing through the same handler the global net uses
@@ -113,11 +136,15 @@ export function ensureShellReady(): Promise<void> {
         detail: err instanceof Error ? err.message : String(err),
       });
     } finally {
-      bootInFlight = null;
+      if (bootInFlight?.promise === currentPromise) {
+        bootInFlight = null;
+      }
     }
-  })();
+  });
 
-  return bootInFlight;
+  bootInFlight = { orgId: requested, promise: currentPromise };
+
+  return currentPromise;
 }
 
 /** Loader "Retry": re-enter boot for the current Clerk state. */
@@ -170,6 +197,7 @@ export function initShellAuth(): void {
 
     if (!clerk.session) {
       bumpBootEpoch();
+      bootInFlight = null;
       setShellBootedOrg(null);
       setShellState({ kind: 'booting', detail: 'Redirecting to sign in…' });
       if (router.currentRoute.value.meta.shell) {
