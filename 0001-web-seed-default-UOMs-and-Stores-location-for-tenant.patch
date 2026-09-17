@@ -1,0 +1,145 @@
+From f2f11aac6b1acee1b947eb9343253e289735343e Mon Sep 17 00:00:00 2001
+From: Charles <charles@rarebooks.cc>
+Date: Thu, 17 Sep 2026 09:29:38 +0000
+Subject: [PATCH] web: seed default UOMs and Stores location for tenant
+ provisioning
+
+Desktop's setup wizard (src/setup/setupInstance.ts's
+createDefaultEntries()) seeds default UOM records and a default
+'Stores' Location before a user ever sees the app. The Web tenant
+provisioning path (custom/web/auth/applyTenantSchema.ts) only ever
+ran DatabaseCore.migrate() - it created the tables but never seeded
+these same default docs, so a Web tenant went READY with a
+structurally correct but empty database.
+
+Several parts of the app assume this default data exists (e.g.
+POSSettings.json's defaultLocation field defaults to 'Stores'), so
+the first db.get('Location', 'Stores', ...) call after login threw
+NotFoundError, surfacing as an alarming 'Not connected' /
+'Not Found: Location Stores' screen right after login.
+
+- Add custom/web/db/seedDefaultEntries.ts: an idempotent (checks
+  db.exists() per record) DatabaseCore-only seeding function mirroring
+  getDefaultUOMs()/getDefaultLocations() from utils/defaults.ts, since
+  this runs on the Worker/migration-runner side with no Fyo instance
+  available (no model layer, no i18n) - only the DatabaseCore the
+  callers already have open.
+- Call it from applyTenantSchema.ts, right after the first migrate(),
+  so every newly provisioned tenant is seeded before going READY.
+- Call it from tenantMigrationRunner.ts's migrateTenantProject() too:
+  this is what recovers PROJECT_CREATED tenants (see the prior
+  'stillProvisioning' shell-state patch) and also re-runs against
+  every READY tenant on each schema rollout, so it must seed a
+  tenant whose original provisioning run predates this fix, and must
+  be a no-op on one that is already seeded.
+---
+ custom/web/auth/applyTenantSchema.ts   |  6 ++++
+ custom/web/db/seedDefaultEntries.ts    | 48 ++++++++++++++++++++++++++
+ custom/web/db/tenantMigrationRunner.ts |  5 +++
+ 3 files changed, 59 insertions(+)
+ create mode 100644 custom/web/db/seedDefaultEntries.ts
+
+diff --git a/custom/web/auth/applyTenantSchema.ts b/custom/web/auth/applyTenantSchema.ts
+index bea1435..0ca0bdf 100644
+--- a/custom/web/auth/applyTenantSchema.ts
++++ b/custom/web/auth/applyTenantSchema.ts
+@@ -14,6 +14,7 @@
+ import DatabaseCore from '../../../backend/database/core';
+ import { getSchemas } from '../../../schemas';
+ import { newTenantKnexConfig } from '../db/knexPgConfig';
++import { seedDefaultEntries } from '../db/seedDefaultEntries';
+ 
+ export async function applyTenantSchema(
+   connectionString: string
+@@ -28,6 +29,11 @@ export async function applyTenantSchema(
+     // the same way DatabaseManager.getSchemaMap() does on Desktop.
+     db.setSchemaMap(getSchemas('-', []));
+     await db.migrate();
++    // Desktop's setup wizard seeds these same defaults (UOMs, the "Stores"
++    // Location) via createDefaultEntries() before a user ever sees the
++    // app; Web has no equivalent wizard step, so this is that seeding,
++    // done here so a Web tenant is never READY without them.
++    await seedDefaultEntries(db);
+   } finally {
+     await db.close();
+   }
+diff --git a/custom/web/db/seedDefaultEntries.ts b/custom/web/db/seedDefaultEntries.ts
+new file mode 100644
+index 0000000..1af4526
+--- /dev/null
++++ b/custom/web/db/seedDefaultEntries.ts
+@@ -0,0 +1,48 @@
++/**
++ * Seeds the same default reference data Desktop's setup wizard creates via
++ * src/setup/setupInstance.ts's createDefaultEntries() (backed by
++ * getDefaultUOMs/getDefaultLocations in utils/defaults.ts) — but through
++ * raw DatabaseCore.insert() instead of Fyo's doc.sync(), since this runs on
++ * the Worker / migration-runner side where there is no Fyo instance (no
++ * model layer, no i18n), only the DatabaseCore this file's callers already
++ * have open.
++ *
++ * Idempotent by design (checks db.exists() before each insert), so it is
++ * safe to call on every schema migrate() — not just once at first
++ * provisioning: custom/web/db/tenantMigrationRunner.ts re-runs this on
++ * every rollout against every READY tenant, and also on the PROJECT_CREATED
++ * recovery path, both of which must not fail or duplicate rows on a tenant
++ * that was already seeded.
++ *
++ * Mirrors getDefaultUOMs/getDefaultLocations (utils/defaults.ts) directly;
++ * keep these two lists in sync with that file if Desktop's defaults change.
++ */
++import type DatabaseCore from '../../../backend/database/core';
++import { ModelNameEnum } from '../../../models/types';
++
++const DEFAULT_UOMS: { name: string; isWhole: boolean }[] = [
++  { name: 'Unit', isWhole: true },
++  { name: 'Kg', isWhole: false },
++  { name: 'Gram', isWhole: false },
++  { name: 'Meter', isWhole: false },
++  { name: 'Hour', isWhole: false },
++  { name: 'Day', isWhole: false },
++];
++
++const DEFAULT_LOCATIONS: { name: string }[] = [{ name: 'Stores' }];
++
++export async function seedDefaultEntries(db: DatabaseCore): Promise<void> {
++  for (const uom of DEFAULT_UOMS) {
++    if (await db.exists(ModelNameEnum.UOM, uom.name)) {
++      continue;
++    }
++    await db.insert(ModelNameEnum.UOM, uom);
++  }
++
++  for (const location of DEFAULT_LOCATIONS) {
++    if (await db.exists(ModelNameEnum.Location, location.name)) {
++      continue;
++    }
++    await db.insert(ModelNameEnum.Location, location);
++  }
++}
+diff --git a/custom/web/db/tenantMigrationRunner.ts b/custom/web/db/tenantMigrationRunner.ts
+index 418a2d2..2ff58c6 100644
+--- a/custom/web/db/tenantMigrationRunner.ts
++++ b/custom/web/db/tenantMigrationRunner.ts
+@@ -34,6 +34,7 @@ import { neon } from 'pg';
+ import DatabaseCore from '../../../backend/database/core';
+ import { getSchemas } from '../../../schemas';
+ import { newTenantKnexConfig } from './knexPgConfig';
++import { seedDefaultEntries } from './seedDefaultEntries';
+ import type { RawCustomField } from '../../../backend/database/types';
+ 
+ export type ControlQueryFn = (
+@@ -199,6 +200,10 @@ export async function migrateTenantProject(
+     }
+     db.setSchemaMap(getSchemas('-', rawCustomFields));
+     await db.migrate();
++    // Idempotent (checks existence per record) — safe on a tenant that was
++    // already seeded, and closes the gap for a PROJECT_CREATED tenant whose
++    // first (webhook) run never reached applyTenantSchema.ts's own seeding.
++    await seedDefaultEntries(db);
+   } finally {
+     await db.close();
+   }
+-- 
+2.43.0
+
