@@ -1,1 +1,0 @@
-import{r as t}from"./index-9vi_ri4-.js";const s=t.createContext(null),c=()=>{const e=t.useContext(s);if(!e||e.componentName!=="APIKeys")throw new Error("Clerk: useAPIKeysContext called outside APIKeys.");const{componentName:o,...n}=e;return{...n,componentName:o}};export{s as A,c as u};

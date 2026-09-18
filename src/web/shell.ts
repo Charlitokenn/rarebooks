@@ -15,6 +15,7 @@
 import { SubscriptionInactiveError } from 'fyo/utils/errors';
 import { ensureWebFyoReady } from 'src/web/boot';
 import { clerk } from 'src/web/clerk';
+import { deriveBootShellState } from 'src/web/shellBootState';
 import {
   setShellBootedOrg,
   setShellOrganizations,
@@ -94,25 +95,35 @@ export function ensureShellReady(): Promise<void> {
         return;
       }
 
-      if (boot.status === 'READY') {
-        setShellState({ kind: 'ready' });
-      } else if (boot.status === 'PROVISIONING') {
-        // Still provisioning is a wait, not a dead end: keep the loader
-        // (AC-5) and let the next navigation or Retry re-check.
-        setShellState({
-          kind: 'booting',
-          detail: 'Your account is still being set up.',
-        });
-      } else if (boot.status === 'NOT_SIGNED_IN') {
+      if (boot.status === 'NOT_SIGNED_IN') {
         void router.replace('/sign-in');
+      } else if (boot.status === 'READY') {
+        // Check if accounting setup is complete (spec 0009 AC-1, AC-2)
+        const setupComplete =
+          boot.fyo.singles.AccountingSettings?.setupComplete ?? true;
+
+        if (!setupComplete) {
+          const currentMembership = (clerk.user?.organizationMemberships ?? []).find(
+            (m) => m.organization.id === clerk.organization?.id
+          );
+          const userRole = currentMembership?.role ?? 'member';
+          const isAdmin = userRole === 'org:admin' || userRole === 'org:owner';
+
+          if (isAdmin) {
+            void router.replace('/setup');
+            return;
+          } else {
+            setShellState({
+              kind: 'unavailable',
+              detail: 'This organization is not fully set up yet. Please ask an administrator to complete the setup process.',
+            });
+            return;
+          }
+        }
+
+        setShellState(deriveBootShellState(boot));
       } else {
-        setShellState({
-          kind: 'unavailable',
-          detail:
-            boot.status === 'FAILED'
-              ? boot.error ?? 'Could not reach your data.'
-              : `Your account is not ready yet (status: ${boot.status}).`,
-        });
+        setShellState(deriveBootShellState(boot));
       }
     } catch (err) {
       if (!isActiveBoot(requested, currentPromise)) {

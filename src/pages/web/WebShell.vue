@@ -56,7 +56,13 @@
         class="max-w-md w-full bg-white dark:bg-gray-875 border border-gray-200 dark:border-gray-800 rounded-lg shadow-sm p-6 flex flex-col gap-4"
       >
         <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-25">
-          {{ state.canCreateOrg ? 'No organization yet' : 'Not connected' }}
+          {{
+            state.canCreateOrg
+              ? 'No organization yet'
+              : state.stillProvisioning
+              ? 'Setting up your account'
+              : 'Not connected'
+          }}
         </h1>
         <p class="text-sm text-gray-600 dark:text-gray-400">
           {{ state.detail }}

@@ -15,7 +15,19 @@ import type { ShellOrganization } from 'src/utils/webLive';
 export type ShellState =
   | { kind: 'booting'; detail?: string }
   | { kind: 'ready' }
-  | { kind: 'unavailable'; detail: string; canCreateOrg?: boolean };
+  | {
+      kind: 'unavailable';
+      detail: string;
+      canCreateOrg?: boolean;
+      /**
+       * The tenant's Neon project exists but schema migration hasn't
+       * completed yet (control-plane status PROJECT_CREATED) — a
+       * legitimate, recoverable in-between state, not a hard failure.
+       * WebShell.vue reads this to avoid the alarming "Not connected"
+       * title for what is actually still-provisioning.
+       */
+      stillProvisioning?: boolean;
+    };
 
 const state = ref<ShellState>({ kind: 'booting' });
 /** Org the current boot belongs to; null while Clerk hasn't resolved one. */

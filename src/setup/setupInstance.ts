@@ -80,7 +80,7 @@ async function initializeDatabase(dbPath: string, country: string, fyo: Fyo) {
   await initializeInstance(dbPath, true, countryCode, fyo);
 }
 
-async function updateAccountingSettings(
+export async function updateAccountingSettings(
   {
     companyName,
     country,
@@ -120,7 +120,7 @@ async function updatePrintSettings(
   });
 }
 
-async function updateSystemSettings(
+export async function updateSystemSettings(
   { country, currency: companyCurrency }: SetupWizardOptions,
   fyo: Fyo
 ) {
@@ -141,7 +141,7 @@ async function updateSystemSettings(
   });
 }
 
-async function createCurrencyRecords(fyo: Fyo) {
+export async function createCurrencyRecords(fyo: Fyo) {
   const promises: Promise<Doc | undefined>[] = [];
   const queue: string[] = [];
   const countrySettings = Object.values(getCountryInfo()) as CountryInfo[];
@@ -174,7 +174,7 @@ async function createCurrencyRecords(fyo: Fyo) {
   return Promise.all(promises);
 }
 
-async function createAccountRecords(
+export async function createAccountRecords(
   bankName: string,
   country: string,
   chartOfAccounts: string,
@@ -246,7 +246,7 @@ async function setDefaultAccount(key: string, accountName: string, fyo: Fyo) {
   return true;
 }
 
-async function completeSetup(companyName: string, fyo: Fyo) {
+export async function completeSetup(companyName: string, fyo: Fyo) {
   await fyo.singles.AccountingSettings!.setAndSync('setupComplete', true);
 }
 
@@ -317,7 +317,7 @@ async function getBankAccountParentName(country: string, fyo: Fyo) {
   return parentBankAccount[0].name;
 }
 
-async function createDefaultNumberSeries(fyo: Fyo) {
+export async function createDefaultNumberSeries(fyo: Fyo) {
   const numberSeriesFields = Object.values(fyo.schemaMap)
     .map((f) => f?.fields)
     .flat()
@@ -346,7 +346,7 @@ async function createDefaultNumberSeries(fyo: Fyo) {
   }
 }
 
-async function updateInventorySettings(fyo: Fyo) {
+export async function updateInventorySettings(fyo: Fyo) {
   const inventorySettings = (await fyo.doc.getDoc(
     ModelNameEnum.InventorySettings
   )) as InventorySettings;

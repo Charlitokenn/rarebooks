@@ -54,11 +54,14 @@ function parseRouteFilters(filterString: unknown): Record<string, unknown> {
   }
 }
 
+const SetupWizard = () => import('src/pages/web/SetupWizard.vue');
+
 const routes: RouteRecordRaw[] = [
   // Auth + standalone pages, outside the shell (kept from feature 0001).
   { path: '/sign-in/:pathMatch(.*)*', component: SignIn },
   { path: '/sign-up/:pathMatch(.*)*', component: SignUp },
   { path: '/create-organization', component: CreateOrganization },
+  { path: '/setup', component: SetupWizard },
   { path: '/billing', component: Billing },
   { path: '/settings', component: Settings },
 

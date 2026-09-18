@@ -281,7 +281,7 @@ export default class DatabaseCore extends DatabaseBase {
       fields = [fields];
     }
 
-    if (fields === undefined) {
+    if (getIsNullOrUndef(fields)) {
       fields = schema.fields.filter((f) => !f.computed).map((f) => f.fieldname);
     }
 

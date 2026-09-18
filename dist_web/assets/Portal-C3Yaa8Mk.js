@@ -1,1 +1,0 @@
-import{R as r}from"./index-9vi_ri4-.js";import{r as o}from"./index-Uz0I88EY.js";const a=t=>{const e=r.useRef(document.createElement("div"));return r.useEffect(()=>(document.body.appendChild(e.current),()=>{document.body.removeChild(e.current)}),[]),o.createPortal(t.children,e.current)};export{a as P};
