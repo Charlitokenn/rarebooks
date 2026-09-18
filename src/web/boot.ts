@@ -69,9 +69,12 @@ const WEB_DB_PATH = 'web';
  * enablePointOfSale, which is what gates the POS tab's visibility on
  * Desktop (src/pages/Settings/Settings.vue) and which a tenant may well
  * not have touched, so it must load for the tab logic to decide at all.
+ * AccountingSettings carries setupComplete, which gates the shell's
+ * setup wizard redirect (spec 0009 AC-1, AC-2).
  */
 async function loadNotificationSingles(fyo: Fyo): Promise<void> {
   for (const schemaName of [
+    ModelNameEnum.AccountingSettings,
     ModelNameEnum.InventorySettings,
     ModelNameEnum.POSSettings,
   ]) {

@@ -1,1 +1,0 @@
-import{R as e}from"./index-9vi_ri4-.js";const o=e.createContext(null);o.displayName="RouteContext";const u=()=>{const t=e.useContext(o);if(!t)throw new Error("useRouter called while Router is null");return t};export{o as R,u};

@@ -97,6 +97,31 @@ export function ensureShellReady(): Promise<void> {
 
       if (boot.status === 'NOT_SIGNED_IN') {
         void router.replace('/sign-in');
+      } else if (boot.status === 'READY') {
+        // Check if accounting setup is complete (spec 0009 AC-1, AC-2)
+        const setupComplete =
+          boot.fyo.singles.AccountingSettings?.setupComplete ?? true;
+
+        if (!setupComplete) {
+          const currentMembership = (clerk.user?.organizationMemberships ?? []).find(
+            (m) => m.organization.id === clerk.organization?.id
+          );
+          const userRole = currentMembership?.role ?? 'member';
+          const isAdmin = userRole === 'org:admin' || userRole === 'org:owner';
+
+          if (isAdmin) {
+            void router.replace('/setup');
+            return;
+          } else {
+            setShellState({
+              kind: 'unavailable',
+              detail: 'This organization is not fully set up yet. Please ask an administrator to complete the setup process.',
+            });
+            return;
+          }
+        }
+
+        setShellState(deriveBootShellState(boot));
       } else {
         setShellState(deriveBootShellState(boot));
       }

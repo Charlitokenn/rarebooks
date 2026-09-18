@@ -1,1 +1,0 @@
-import{r as t}from"./index-9vi_ri4-.js";const r=t.createContext(null),a=()=>{const e=t.useContext(r);if(!e||e.componentName!=="PricingTable")throw new Error("Clerk: usePricingTableContext called outside PricingTable.");const{componentName:n,...o}=e;return{...o,componentName:n}};export{r as P,a as u};

@@ -26,11 +26,27 @@ Simple bookkeeping app for small and medium businesses, forked from Frappe Books
 
 ## Stack
 
+RareBooks targets **two deployment forms** from one codebase: Electron (shipped, Desktop) and Cloudflare Workers (in progress, Web). Details in `context/architecture.md` (target-specific) and `context/library-docs.md` (library versions).
+
+**Both targets:**
 - **Language**: TypeScript (strict mode), Vue 3 SFCs
-- **Framework**: Electron (main + renderer process), Vue Router 4
-- **Database**: SQLite via better-sqlite3, Knex query builder
-- **Key dependencies**: Vue 3, Knex, Luxon (dates), Bree (job scheduling), Tailwind CSS
-- **Package manager**: npm (`package-lock.json` is authoritative since the web migration; `yarn.lock` was removed. Yarn Classic is optional and can run the same package scripts if you already have it installed.)
+- **Styling**: Tailwind CSS v3
+- **Routing**: Vue Router 4
+- **ORM**: Custom Fyo framework (Doc/Model layer, `models/`, `reports/`)
+- **Dates**: Luxon
+- **Package manager**: npm (`package-lock.json` is authoritative; `yarn.lock` removed. Yarn Classic optional.)
+
+**Electron (Desktop):**
+- **Shell**: Electron 22 (main + renderer processes), Vite
+- **Database**: SQLite via better-sqlite3 + Knex
+- **Licensing**: Keymint.dev (device-bound, offline grace period)
+- **Payments**: ClickPesa (Tanzania mobile money)
+
+**Cloudflare Workers (Web):**
+- **Shell**: Cloudflare Workers Hono API + browser Vue SPA
+- **Database**: Neon (Postgres, one project per tenant) + Knex
+- **Auth**: Clerk (organization + seat management)
+- **Payments**: PayPal Subscriptions (non-Tanzania) + manual Lipa Namba (Tanzania)
 
 ## Build approach
 
@@ -85,6 +101,9 @@ npm run format
 
 ## Context files
 
+- [worker/AGENTS.md](worker/AGENTS.md) (Hono API on Cloudflare Workers for the web platform)
+- [custom/web/AGENTS.md](custom/web/AGENTS.md) (Web-only custom code for Clerk auth, billing, and tenant utilities)
+- [src/web/AGENTS.md](src/web/AGENTS.md) (Web shell initialization, routing, and state management)
 - [custom/licensing/AGENTS.md](custom/licensing/AGENTS.md) (Licensing, subscription, and payment provider integration for the Electron app)
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._
