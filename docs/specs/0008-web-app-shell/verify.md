@@ -24,7 +24,7 @@ The first doctype is Party (the Customers view): the spec's "Customer" wording r
 - [x] `npx vue-tsc --noEmit` → 109 pre-existing errors, no new files appearing in the list (compare `/tmp/vuetsc_before.txt` method) → AC-7, AC-8
   Ran 2026-09-16: 109 errors, same file set as `/tmp/vuetsc_before.txt`; only line offsets inside already-erroring edited files (e.g. AttachImage.vue 132→137). → AC-7, AC-8
 - [x] `npm run build -- --nopackage` → main + renderer build green (packaging step fails identically at baseline: pre-existing `mac.notarize` electron-builder config error) → AC-8
-  Ran 2026-09-16: `✓ built in 32.63s` (main + renderer). → AC-8
+  Ran 2026-09-16: `✓ built in 32.63s` (main + renderer). Ran 2026-09-18: `✓ built in 3m 22s` (main + renderer, no web shell code in dist_electron/build/*.js, desktop licensing code present). → AC-8
 - [x] `npm run build:web` → green; then `grep -l "get-license-state" dist_web/assets/*.js` and `grep -l "license-state-changed" dist_web/assets/*.js` → no matches (desktop router excluded) → AC-7
   Ran 2026-09-16: build green; both greps empty. Inverse check added: `WebShell`/`rendererWeb`/`initFyoWeb` absent from `dist_electron` bundle, `get-license-state` present there (desktop bundle untouched by the alias). → AC-7
 - [ ] `npm run test` → currently cannot run on this machine (pre-existing: `scripts/runner.sh` shebang `#!/usr/bin/env zsh`, zsh absent). Run on the engineer's macOS/Linux box with zsh, or after fixing the runner; must be green including `tests/webBoot.spec.ts` → AC-8

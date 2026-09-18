@@ -1,0 +1,7 @@
+{
+  "tool": "tape",
+  "additionalTools": ["tap-spec"],
+  "testDir": "tests",
+  "filePattern": "**/*.spec.ts",
+  "packageManager": "npm"
+}
