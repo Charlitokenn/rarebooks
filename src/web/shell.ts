@@ -100,7 +100,7 @@ export function ensureShellReady(): Promise<void> {
       } else if (boot.status === 'READY') {
         // Check if accounting setup is complete (spec 0009 AC-1, AC-2)
         const setupComplete =
-          boot.fyo.singles.AccountingSettings?.setupComplete ?? true;
+          boot.fyo.singles.AccountingSettings?.setupComplete ?? false;
 
         if (!setupComplete) {
           const currentMembership = (clerk.user?.organizationMemberships ?? []).find(
