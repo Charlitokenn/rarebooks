@@ -144,13 +144,16 @@
 import { defineComponent } from 'vue';
 import { useRouter } from 'vue-router';
 import { fyo } from 'src/initFyo';
+import { ensureWebFyoReady } from 'src/web/boot';
+import { useClerkAuth } from 'src/web/clerk';
 import { setupWebInstance } from 'src/web/setupWeb';
 
 export default defineComponent({
   name: 'SetupWizard',
   setup() {
     const router = useRouter();
-    return { router };
+    const { orgId } = useClerkAuth();
+    return { router, orgId };
   },
   data() {
     return {
@@ -180,6 +183,14 @@ export default defineComponent({
 
       this.loading = true;
       try {
+        // This page is reachable by a direct/fresh navigation (not only
+        // via the shell's redirect), so `fyo` is not guaranteed to be
+        // connected yet: boot it here rather than assuming a prior shell
+        // boot already populated its schema map.
+        if (!this.orgId) {
+          throw new Error('No active organization');
+        }
+        await ensureWebFyoReady(this.orgId);
         await setupWebInstance(this.form, fyo);
         await this.router.push('/');
       } catch (err) {

@@ -35,7 +35,7 @@ let isReload = false;
  */
 let electronProcess = null;
 
-console.log(`running Frappe Books in dev mode\nroot: ${root}`);
+console.log(`running RareBooks in dev mode\nroot: ${root}`);
 /**
  * @type {import('execa').ExecaChildProcess<string>}
  */

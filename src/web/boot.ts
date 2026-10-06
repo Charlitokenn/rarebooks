@@ -71,15 +71,24 @@ const WEB_DB_PATH = 'web';
  * not have touched, so it must load for the tab logic to decide at all.
  * AccountingSettings carries setupComplete, which gates the shell's
  * setup wizard redirect (spec 0009 AC-1, AC-2).
+ *
+ * POSSettings is loaded only once setup is complete: its
+ * cashAccount/writeOffAccount/defaultAccount/inventory Link fields default
+ * to concrete Chart-of-Accounts/Location names ("Cash In Hand", "Stores",
+ * ...) that the setup wizard is what creates (spec 0009). Loading it
+ * eagerly on a tenant that hasn't run setup yet throws NotFoundError from
+ * Doc.loadLinks(), which fails boot() itself before the setupComplete
+ * check below ever runs, locking every not-yet-set-up tenant out of both
+ * the shell and the setup wizard redirect (spec 0008 AC-1, AC-5).
  */
 async function loadNotificationSingles(fyo: Fyo): Promise<void> {
-  for (const schemaName of [
-    ModelNameEnum.AccountingSettings,
-    ModelNameEnum.InventorySettings,
-    ModelNameEnum.POSSettings,
-  ]) {
-    // getDoc caches into fyo.singles (DocHandler.getDoc → singles map).
-    await fyo.doc.getDoc(schemaName);
+  const accountingSettings = await fyo.doc.getDoc(
+    ModelNameEnum.AccountingSettings
+  );
+  await fyo.doc.getDoc(ModelNameEnum.InventorySettings);
+
+  if (accountingSettings.setupComplete) {
+    await fyo.doc.getDoc(ModelNameEnum.POSSettings);
   }
 }
 
