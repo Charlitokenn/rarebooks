@@ -36,9 +36,7 @@ const frappeBooksConfig = {
     artifactName: '${productName}-v${version}-mac-${arch}.${ext}',
     category: 'public.app-category.finance',
     icon: 'build/icon.icns',
-    notarize: {
-      teamId: process.env.APPLE_TEAM_ID || '',
-    },
+    notarize: !!process.env.APPLE_TEAM_ID,
     hardenedRuntime: true,
     gatekeeperAssess: false,
     darkModeSupport: false,
@@ -47,9 +45,11 @@ const frappeBooksConfig = {
     publish: ['github'],
   },
   win: {
-    publisherName: 'Rareco Company Ltd.',
+    signtoolOptions: {
+      publisherName: 'Rareco Company Ltd.',
+    },
     artifactName: '${productName}-v${version}-windows-${arch}.${ext}',
-    signDlls: true,
+    signExts: ['.dll'], //signDlls: true,
     icon: 'build/icon.ico',
     publish: ['github'],
     target: [
