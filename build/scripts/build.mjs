@@ -9,6 +9,7 @@ import { getMainProcessCommonConfig } from './helpers.mjs';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import frappeBooksConfig from '../../electron-builder-config.mjs';
+import { execSync } from 'child_process';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(dirname, '..', '..');
@@ -36,6 +37,7 @@ updatePaths();
 await buildMainProcessSource();
 await buildRendererProcessSource();
 copyPackageJson();
+installAppDependencies(); // new
 
 if (!argv.nopackage) {
   await packageApp();
@@ -47,6 +49,19 @@ function updatePaths() {
   fs.removeSync(packageDirPath);
   fs.ensureDirSync(packageDirPath);
   fs.ensureDirSync(path.join(buildDirPath, 'node_modules'));
+}
+
+/**
+ * electron-builder 26 collects node_modules from directories.app first and,
+ * if that is empty, falls back to the repo root and packs the entire root
+ * dependency tree. Installing the trimmed package.json here keeps the packaged
+ * app to the 4 externals (knex, better-sqlite3, electron-store + their deps).
+ */
+function installAppDependencies() {
+  execSync(
+    'npm install --omit=dev --ignore-scripts --no-package-lock --no-audit --no-fund',
+    { cwd: buildDirPath, stdio: 'inherit' }
+  );
 }
 
 async function buildMainProcessSource() {
