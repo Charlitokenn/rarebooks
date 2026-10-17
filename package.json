@@ -1,6 +1,6 @@
 {
   "name": "rarebooks",
-  "version": "0.41.0",
+  "version": "0.41.2",
   "description": "Simple book-keeping app for everyone",
   "author": {
     "name": "Rareco Company Ltd.",
@@ -14,6 +14,7 @@
     "build:web": "vite build --config vite.config.web.ts",
     "deploy:web": "npm run build:web && npm --prefix worker run deploy",
     "build:msix": "electron-builder --win msix --x64",
+    "build:appx": "electron-builder --win appx",
     "release": "scripts/publish-mac-arm.sh",
     "postinstall": "electron-rebuild",
     "postuninstall": "electron-rebuild",

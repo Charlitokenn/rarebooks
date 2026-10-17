@@ -1,1 +1,0 @@
-function r(t,n="long",o="en-US"){const e={month:n==="short"?"short":"long",...n!=="monthyear"&&{day:"numeric"},...n!=="short"&&{year:"numeric"}};return new Intl.DateTimeFormat(o,e).format(t)}export{r as f};

@@ -96,6 +96,7 @@ export default function registerLicenseIpcListeners(_main: Main) {
         console.log('\n=== IPC CHECK_LICENSE Result ===');
         console.log('licenseeEmail:', result.licenseeEmail);
         console.log('licenseeName:', result.licenseeName);
+         console.log('All result:', result);
         console.log('Full result:', JSON.stringify(result, null, 2));
         return toPlain(result);
       } catch (error) {

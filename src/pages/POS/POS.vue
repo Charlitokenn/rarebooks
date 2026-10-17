@@ -1047,6 +1047,8 @@ export default defineComponent({
           item: item.name,
           quantity: quantity ? quantity : 1,
           hsnCode: itemsHsncode,
+          unit: item.unit,
+          transferUnit: item.unit,
         });
 
         if (this.sinvDoc.priceList) {

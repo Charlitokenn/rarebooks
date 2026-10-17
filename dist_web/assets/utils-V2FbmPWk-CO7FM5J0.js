@@ -1,1 +1,0 @@
-const e=new Set(["__proto__","constructor","prototype"]),p=(o,n)=>{if(!(!o||!n))for(const t in o)e.has(t)||(Object.prototype.hasOwnProperty.call(o,t)&&o[t]!==null&&typeof o[t]=="object"?(n[t]===void 0&&(n[t]=new(Object.getPrototypeOf(o[t])).constructor),p(o[t],n[t])):Object.prototype.hasOwnProperty.call(o,t)&&o[t]!==void 0&&(n[t]=o[t]))};export{p as f};
