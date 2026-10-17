@@ -1,0 +1,136 @@
+export class BaseError extends Error {
+  more: Record<string, unknown> = {};
+  message: string;
+  statusCode: number;
+  shouldStore: boolean;
+
+  constructor(statusCode: number, message: string, shouldStore = true) {
+    super(message);
+    this.name = 'BaseError';
+    this.statusCode = statusCode;
+    this.message = message;
+    this.shouldStore = shouldStore;
+  }
+}
+
+export class ValidationError extends BaseError {
+  constructor(message: string, shouldStore = false) {
+    super(417, message, shouldStore);
+    this.name = 'ValidationError';
+  }
+}
+
+export class NotFoundError extends BaseError {
+  constructor(message: string, shouldStore = true) {
+    super(404, message, shouldStore);
+    this.name = 'NotFoundError';
+  }
+}
+
+export class ForbiddenError extends BaseError {
+  constructor(message: string, shouldStore = true) {
+    super(403, message, shouldStore);
+    this.name = 'ForbiddenError';
+  }
+}
+
+export class DuplicateEntryError extends ValidationError {
+  constructor(message: string, shouldStore = false) {
+    super(message, shouldStore);
+    this.name = 'DuplicateEntryError';
+  }
+}
+
+export class LinkValidationError extends ValidationError {
+  constructor(message: string, shouldStore = false) {
+    super(message, shouldStore);
+    this.name = 'LinkValidationError';
+  }
+}
+
+export class MandatoryError extends ValidationError {
+  constructor(message: string, shouldStore = false) {
+    super(message, shouldStore);
+    this.name = 'MandatoryError';
+  }
+}
+
+export class DatabaseError extends BaseError {
+  constructor(message: string, shouldStore = true) {
+    super(500, message, shouldStore);
+    this.name = 'DatabaseError';
+  }
+}
+
+/**
+ * Raised by the web db demux on a 402 SUBSCRIPTION_INACTIVE denial (spec
+ * 0003 AC-4). Carries the subscription's wire status so the caller can
+ * route to /billing and show the right copy without re-querying. Not
+ * stored: it is a navigation signal, not an app fault.
+ */
+export class SubscriptionInactiveError extends BaseError {
+  constructor(message: string, readonly status: string, shouldStore = false) {
+    super(402, message, shouldStore);
+    this.name = 'SubscriptionInactiveError';
+  }
+}
+
+/**
+ * Raised by the web db demux when the active organization switched while a
+ * request was in flight (spec 0008 AC-9): the response belongs to the old
+ * tenant and must never land in the newly booted one, so the in-flight call
+ * surfaces as a failure instead of silently applying stale data. Not
+ * stored: it is a switch race, not an app fault.
+ */
+export class BootSwitchedError extends BaseError {
+  constructor(shouldStore = false) {
+    super(
+      499,
+      'The organization switched before this request completed',
+      shouldStore
+    );
+    this.name = 'BootSwitchedError';
+  }
+}
+
+export class CannotCommitError extends DatabaseError {
+  constructor(message: string, shouldStore = true) {
+    super(message, shouldStore);
+    this.name = 'CannotCommitError';
+  }
+}
+
+export class NotImplemented extends BaseError {
+  constructor(message = '', shouldStore = false) {
+    super(501, message, shouldStore);
+    this.name = 'NotImplemented';
+  }
+}
+
+export class ValueError extends ValidationError {}
+export class ConflictError extends ValidationError {}
+export class InvalidFieldError extends ValidationError {}
+
+export function getDbError(err: Error) {
+  if (!err.message) {
+    return DatabaseError;
+  }
+
+  if (err.message.includes('SQLITE_ERROR: no such table')) {
+    return NotFoundError;
+  }
+
+  if (err.message.includes('FOREIGN KEY')) {
+    return LinkValidationError;
+  }
+
+  if (err.message.includes('SQLITE_ERROR: cannot commit')) {
+    return CannotCommitError;
+  }
+
+  if (err.message.includes('UNIQUE constraint failed:')) {
+    return DuplicateEntryError;
+  }
+
+  return DatabaseError;
+}

@@ -1,0 +1,61 @@
+{
+  "compilerOptions": {
+    "target": "es2020",
+    "module": "esnext",
+    "strict": true,
+    "allowJs": true,
+    "jsx": "preserve",
+    "importHelpers": true,
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "sourceMap": true,
+    "types": ["vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "src/*": ["src/*"],
+      "schemas/*": ["schemas/*"],
+      "main/*": ["main/*"],
+      "backend/*": ["backend/*"],
+      "regional/*": ["regional/*"],
+      "fixtures/*": ["fixtures/*"],
+      "reports/*": ["reports/*"],
+      "models/*": ["models/*"],
+      "utils/*": ["utils/*"],
+      "dummy/*": ["dummy/*"],
+      "custom/*": ["custom/*"]
+    },
+    "lib": ["esnext", "dom", "dom.iterable", "scripthost"]
+  },
+  "ts-node": {
+    "files": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.vue",
+    "schemas/**/*.ts",
+    "backend/**/*.ts",
+    "fyo/**/*.ts",
+    "models/**/*.ts",
+    "patches/**/*.ts",
+    "patches/**/*.js",
+    "reports/**/*.ts",
+    "accounting/**/*.ts",
+    "scripts/**/*.ts",
+    "main/**/*.ts",
+    "regional/**/*.ts",
+    "reports/**/*.ts",
+    "utils/**/*.ts",
+    "tests/**/*.ts",
+    "dummy/**/*.ts",
+    "jobs/**/*.ts",
+    "custom/**/*.ts",
+    "custom/**/*.json",
+    "custom/**/*.vue",
+    "rendererWeb.ts",
+    "vite.config.web.ts"
+  ],
+  "exclude": ["node_modules", "custom/web/**"]
+}
