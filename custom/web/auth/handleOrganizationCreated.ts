@@ -110,14 +110,62 @@ export function tenantProjectName(orgId: string): string {
   return `rarebooks-tenant-${orgId}`;
 }
 
+/**
+ * The class of whatever was thrown. Not everything thrown is an `Error`: the
+ * Neon serverless driver rejects with a WebSocket `ErrorEvent` when it can't
+ * connect, so objects are named by their constructor or `toStringTag`
+ * rather than lumped together as "object".
+ */
 export function errorClass(err: unknown): string {
   if (err instanceof Error) {
     return err.name !== 'Error' ? err.name : err.constructor.name || 'Error';
   }
-  return typeof err;
+  if (typeof err === 'object' && err !== null) {
+    const constructorName = (err as { constructor?: { name?: unknown } })
+      .constructor?.name;
+    if (
+      typeof constructorName === 'string' &&
+      constructorName !== '' &&
+      constructorName !== 'Object'
+    ) {
+      return constructorName;
+    }
+    const tag = Object.prototype.toString.call(err).slice(8, -1);
+    return tag !== 'Object' ? tag : 'object';
+  }
+  return err === null ? 'null' : typeof err;
 }
 
 const CONNECTION_STRING_PATTERN = /postgres(ql)?:\/\/\S+/g;
+const NO_DETAIL_ERROR_EVENT =
+  'WebSocket error event with no message, usually a failed database connection';
+
+/**
+ * The human readable part of a thrown value, never `String(err)` on an
+ * object (that gives "[object ErrorEvent]"). An `ErrorEvent` keeps its
+ * detail in `message`, or in an inner `error` with its own `code`.
+ */
+function describeThrown(err: unknown): string {
+  if (err instanceof Error) {
+    return err.message;
+  }
+  if (typeof err === 'object' && err !== null) {
+    const { message, error } = err as { message?: unknown; error?: unknown };
+    if (typeof message === 'string' && message !== '') {
+      return message;
+    }
+    if (error instanceof Error) {
+      const code = (error as { code?: unknown }).code;
+      return typeof code === 'string' && !error.message.includes(code)
+        ? `${error.message} (${code})`
+        : error.message;
+    }
+    return errorClass(err) === 'ErrorEvent'
+      ? NO_DETAIL_ERROR_EVENT
+      : 'no message';
+  }
+  return typeof err === 'symbol' ? 'symbol' : String(err);
+}
 
 /**
  * What gets stored in `provisioning_last_error`: the error's class, the Neon
@@ -127,8 +175,7 @@ const CONNECTION_STRING_PATTERN = /postgres(ql)?:\/\/\S+/g;
 export function sanitizeError(err: unknown): string {
   const status = (err as { status?: unknown } | null)?.status;
   const httpStatus = typeof status === 'number' ? ` (HTTP ${status})` : '';
-  const message = err instanceof Error ? err.message : String(err);
-  const redacted = message
+  const redacted = describeThrown(err)
     .slice(0, 200)
     .replace(CONNECTION_STRING_PATTERN, '[redacted]');
   return `${errorClass(err)}${httpStatus}: ${redacted}`;

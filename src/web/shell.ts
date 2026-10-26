@@ -35,6 +35,38 @@ interface BootInFlight {
 
 let bootInFlight: BootInFlight | null = null;
 
+/**
+ * How long to wait before asking again while the tenant is still being set
+ * up. Spec 0010 provisions on a queue, so a brand new org's first answer is
+ * almost always PROVISIONING, and the loader has no Retry button: without
+ * this re-check nothing re-runs the boot and it spins until a reload. Same
+ * cadence the old standalone Dashboard.vue poller used.
+ */
+const PROVISIONING_RECHECK_MS = 2000;
+let provisioningRecheck: ReturnType<typeof setTimeout> | null = null;
+
+function cancelProvisioningRecheck(): void {
+  if (provisioningRecheck !== null) {
+    clearTimeout(provisioningRecheck);
+    provisioningRecheck = null;
+  }
+}
+
+function scheduleProvisioningRecheck(orgId: string): void {
+  cancelProvisioningRecheck();
+  provisioningRecheck = setTimeout(() => {
+    provisioningRecheck = null;
+    if (
+      clerk.session !== null &&
+      clerk.organization?.id === orgId &&
+      shellBootedOrgId.value === orgId
+    ) {
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      bootShell(true);
+    }
+  }, PROVISIONING_RECHECK_MS);
+}
+
 function isActiveBoot(orgId: string, promise: Promise<void>): boolean {
   return (
     bootInFlight?.orgId === orgId &&
@@ -51,6 +83,17 @@ function isActiveBoot(orgId: string, promise: Promise<void>): boolean {
  * any non-ready state re-runs the boot. Concurrent callers share one run.
  */
 export function ensureShellReady(): Promise<void> {
+  return bootShell(false);
+}
+
+/**
+ * `keepScreen` is for the background provisioning re-check: it leaves the
+ * current loader or status screen up instead of flashing a bare loader
+ * every two seconds.
+ */
+function bootShell(keepScreen: boolean): Promise<void> {
+  cancelProvisioningRecheck();
+
   if (!clerk.session) {
     bootInFlight = null;
     setShellBootedOrg(null);
@@ -83,7 +126,9 @@ export function ensureShellReady(): Promise<void> {
   }
 
   setShellBootedOrg(orgId);
-  setShellState({ kind: 'booting' });
+  if (!keepScreen) {
+    setShellState({ kind: 'booting' });
+  }
   const requested = orgId;
 
   const currentPromise = Promise.resolve().then(async () => {
@@ -124,6 +169,14 @@ export function ensureShellReady(): Promise<void> {
         setShellState(deriveBootShellState(boot));
       } else {
         setShellState(deriveBootShellState(boot));
+        // Both are steps the queue consumer moves past on its own (a new
+        // org often passes through PROJECT_CREATED too), so keep checking.
+        if (
+          boot.status === 'PROVISIONING' ||
+          boot.status === 'PROJECT_CREATED'
+        ) {
+          scheduleProvisioningRecheck(requested);
+        }
       }
     } catch (err) {
       if (!isActiveBoot(requested, currentPromise)) {
@@ -208,6 +261,7 @@ export function initShellAuth(): void {
 
     if (!clerk.session) {
       bumpBootEpoch();
+      cancelProvisioningRecheck();
       bootInFlight = null;
       setShellBootedOrg(null);
       setShellState({ kind: 'booting', detail: 'Redirecting to sign in…' });
