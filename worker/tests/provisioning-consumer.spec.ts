@@ -11,6 +11,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  errorClass,
   handleDeadLetteredProvisioning,
   provisionTenant,
   ProvisioningNotReadyError,
@@ -901,6 +902,126 @@ describe('sanitizeError (AC-12)', () => {
     const out = sanitizeError(long);
     expect(out).not.toContain('u:p');
     expect(out.length).toBeLessThanOrEqual('Error: '.length + 200);
+  });
+
+  // The Neon serverless driver rejects with a WebSocket ErrorEvent, not an
+  // Error, when it can't connect (seen live on staging, spec 0010 AC-7 drill).
+  // Workers' ErrorEvent isn't a global in Node, so this stands in for it:
+  // same class name, same toStringTag, same `message` / `error` fields.
+  class ErrorEvent {
+    readonly type = 'error';
+    constructor(readonly message: string, readonly error?: unknown) {}
+  }
+
+  it('names a non Error thrown value by its class instead of "object" (ErrorEvent)', () => {
+    expect(errorClass(new ErrorEvent(''))).toBe('ErrorEvent');
+    expect(errorClass({ [Symbol.toStringTag]: 'CloseEvent' })).toBe(
+      'CloseEvent'
+    );
+    expect(errorClass('boom')).toBe('string');
+    expect(errorClass(null)).toBe('null');
+  });
+
+  it('reads the message from an ErrorEvent, then from its inner error, adding the code only when it is new', () => {
+    expect(sanitizeError(new ErrorEvent('socket hang up'))).toBe(
+      'ErrorEvent: socket hang up'
+    );
+
+    // The code is already in this message, so it is not repeated.
+    const verbose = Object.assign(
+      new Error('connect ECONNREFUSED 127.0.0.1:9'),
+      { code: 'ECONNREFUSED' }
+    );
+    expect(sanitizeError(new ErrorEvent('', verbose))).toBe(
+      'ErrorEvent: connect ECONNREFUSED 127.0.0.1:9'
+    );
+
+    // The code adds information here, so it is appended.
+    const terse = Object.assign(new Error('connection failed'), {
+      code: 'ECONNREFUSED',
+    });
+    expect(sanitizeError(new ErrorEvent('', terse))).toBe(
+      'ErrorEvent: connection failed (ECONNREFUSED)'
+    );
+  });
+
+  it('says so plainly when an ErrorEvent carries no detail at all', () => {
+    const out = sanitizeError(new ErrorEvent(''));
+    expect(out).toBe(
+      'ErrorEvent: WebSocket error event with no message, usually a failed database connection'
+    );
+    expect(out).not.toContain('[object');
+  });
+
+  it('never prints "[object ...]" for any thrown shape', () => {
+    for (const thrown of [
+      new ErrorEvent(''),
+      { some: 'bag' },
+      {},
+      [],
+      undefined,
+      null,
+      42,
+      'plain string',
+      Symbol('s'),
+    ]) {
+      expect(sanitizeError(thrown)).not.toContain('[object');
+    }
+  });
+
+  it('covers the remaining thrown shapes: Error subclasses, plain objects with a message, odd codes, symbols', () => {
+    class PoolError extends Error {}
+    expect(errorClass(new PoolError('x'))).toBe('PoolError');
+    expect(errorClass(new Error('x'))).toBe('Error');
+    expect(errorClass(undefined)).toBe('undefined');
+    expect(errorClass(Object.create(null))).toBe('object');
+
+    expect(sanitizeError({ message: 'plain bag' })).toBe('object: plain bag');
+    expect(sanitizeError({ some: 'bag' })).toBe('object: no message');
+    expect(sanitizeError(Symbol('s'))).toBe('symbol: symbol');
+    expect(sanitizeError(null)).toBe('null: null');
+
+    // A non string code is ignored rather than printed.
+    const numericCode = Object.assign(new Error('connection failed'), {
+      code: 111,
+    });
+    expect(sanitizeError(new ErrorEvent('', numericCode))).toBe(
+      'ErrorEvent: connection failed'
+    );
+  });
+
+  it('redacts a connection string wherever it appears, including inside an ErrorEvent', () => {
+    const url = 'postgres://owner:hunter2@ep-x.neon.tech/db';
+    for (const thrown of [
+      new ErrorEvent(`failed ${url}`),
+      new ErrorEvent('', new Error(`failed ${url}`)),
+      `failed ${url}`,
+    ]) {
+      const out = sanitizeError(thrown);
+      expect(out).not.toContain('hunter2');
+      expect(out).not.toContain('owner:');
+      expect(out).toContain('[redacted]');
+    }
+  });
+
+  it('a migrate that rejects with an ErrorEvent leaves a useful reason on the row and in the log', async () => {
+    state.orgs.add(ORG);
+    const msg = message('msg-1');
+    await provisionTenant(ORG, msg, {
+      controlDb: {} as never,
+      neon: fakeNeon(),
+      encryptionKey: KEY,
+      applySchema: vi.fn(async () => {
+        throw new ErrorEvent('', new Error('connect ECONNREFUSED 127.0.0.1:9'));
+      }),
+    });
+    expect(row().lastError).toBe(
+      'ErrorEvent: connect ECONNREFUSED 127.0.0.1:9'
+    );
+    expect(events()[0]).toMatchObject({
+      event: 'provisioning.attempt_failed',
+      errorClass: 'ErrorEvent',
+    });
   });
 });
 

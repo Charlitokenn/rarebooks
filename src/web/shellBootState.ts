@@ -23,7 +23,7 @@ export function deriveBootShellState(boot: WebFyoBoot): ShellState {
 
   if (boot.status === 'PROVISIONING') {
     // Still provisioning is a wait, not a dead end: keep the loader
-    // (AC-5) and let the next navigation or Retry re-check.
+    // (AC-5); src/web/shell.ts re-checks on a timer until it moves on.
     return {
       kind: 'booting',
       detail: 'Your account is still being set up.',
