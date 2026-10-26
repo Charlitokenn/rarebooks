@@ -20,8 +20,10 @@ const USAGE = `Usage: npm run migrate:tenants -- [options]
 Options:
   --org=<orgId>                only this tenant (default: every eligible tenant)
   --include-project-created    also migrate PROJECT_CREATED tenants (recovery
-                               path for provisioning webhook deaths; advances
-                               them to READY on success)
+                               path for a provisioning attempt that died;
+                               takes each one's provisioning lease, advances
+                               it to READY on success, and skips one whose
+                               provisioning is still in flight)
   --dry-run                    list what would migrate, change nothing
   --help                       this message
 
@@ -70,6 +72,11 @@ async function main(): Promise<number> {
         summary.skipped.length
       }, failed ${summary.failed.length}`
     );
+    for (const skip of summary.skipped) {
+      if (skip.reason) {
+        console.log(`[migrate-tenants] ${skip.orgId}: skipped: ${skip.reason}`);
+      }
+    }
     for (const failure of summary.failed) {
       console.error(`[migrate-tenants] ${failure.orgId}: ${failure.error}`);
     }

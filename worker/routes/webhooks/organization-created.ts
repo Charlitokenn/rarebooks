@@ -1,8 +1,9 @@
 /**
- * Thin Hono route: verify the Clerk webhook signature, then delegate to
- * custom/web/auth/handleOrganizationCreated.ts for the actual provisioning
- * logic. This file should stay thin — business logic belongs in custom/web/,
- * matching how main/registerIpcMainActionListeners.ts stays thin on Desktop.
+ * Thin Hono route: verify the Clerk webhook signature, record the org, and
+ * enqueue `{ orgId }` for the provisioning consumer (worker/queues/
+ * provisioning.ts → custom/web/auth/handleOrganizationCreated.ts). No Neon
+ * call, no migration, and no tenant row read happens here: that work takes
+ * longer than Svix waits for an answer, so it lives behind the queue.
  *
  * Uses @clerk/hono/webhooks' verifyWebhook rather than a manual svix
  * integration: it verifies AND parses the payload in one call (reads the
@@ -15,16 +16,12 @@
  * route first assumed).
  *
  * Spec: docs/specs/0001-web-platform-foundation-control-plane.md (AC-2, AC-4)
+ * Spec: docs/specs/0010-provisioning-claim-lease-orphans/index.md (AC-1)
  */
 import { Hono } from 'hono';
 import { verifyWebhook } from '@clerk/hono/webhooks';
 import type { OrganizationJSON, WebhookEvent } from '@clerk/backend';
-import {
-  handleOrganizationCreated,
-  type ClerkOrganizationCreatedEvent,
-} from '../../../custom/web/auth/handleOrganizationCreated';
-import { createNeonProvisioningClient } from '../../lib/neon-client';
-import { getControlDb, getTenantProject } from '../../db/control';
+import { getControlDb, insertOrganization } from '../../db/control';
 import type { WorkerEnv } from '../../types';
 
 export const organizationCreatedRoute = new Hono<{ Bindings: WorkerEnv }>();
@@ -48,36 +45,26 @@ organizationCreatedRoute.post('/', async (c) => {
     return c.json({ received: true, ignored: event.type }, 200);
   }
 
-  // custom/web/auth/ lives outside worker/ and can't resolve @clerk/backend
-  // (only installed here, in worker/node_modules) — map fields explicitly
-  // at this boundary rather than passing the whole OrganizationJSON across.
-  const orgEvent: ClerkOrganizationCreatedEvent = {
-    data: { id: event.data.id, name: (event.data as OrganizationJSON).name },
-  };
-
+  const orgId = event.data.id;
   try {
-    await handleOrganizationCreated(
-      orgEvent,
-      c.env,
-      createNeonProvisioningClient(c.env)
-    );
+    // The org name goes to `organizations` only, never into the message.
+    await insertOrganization(getControlDb(c.env), {
+      id: orgId,
+      name: (event.data as OrganizationJSON).name,
+    });
+    // Sent every time, even for an org that exists or is READY: the
+    // consumer drops those, so a Svix redelivery is always safe.
+    await c.env.PROVISIONING_QUEUE.send({ orgId });
   } catch (err) {
-    console.error('organization.created provisioning failed', err);
-    try {
-      const tenant = await getTenantProject(
-        getControlDb(c.env),
-        event.data.id
-      );
-      if (tenant?.status === 'FAILED') {
-        return c.json({ received: true, provisioning: 'failed' }, 200);
-      }
-    } catch (statusError) {
-      console.error(
-        'organization.created provisioning status lookup failed',
-        statusError
-      );
-    }
-    return c.json({ received: false, provisioning: 'retry' }, 500);
+    // 500 so Svix retries; both writes are idempotent.
+    console.error(
+      JSON.stringify({
+        event: 'provisioning.enqueue_failed',
+        orgId,
+        errorClass: err instanceof Error ? err.name : typeof err,
+      })
+    );
+    return c.json({ received: false }, 500);
   }
 
   return c.json({ received: true }, 200);

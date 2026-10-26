@@ -37,8 +37,73 @@ previews_enabled = false
 #   TENANT_ENCRYPTION_KEY   (32 random bytes, base64-encoded — e.g.
 #                            `openssl rand -base64 32`)
 
+# Tenant provisioning queue and its dead letter queue (spec 0010). Queue
+# bindings do NOT inherit across envs, so every env below repeats this block
+# with its own suffix. Requires the Workers Paid plan, and each queue created
+# first: `wrangler queues create rarebooks-provisioning[-<env>]` and
+# `wrangler queues create rarebooks-provisioning-dlq[-<env>]`.
+[[queues.producers]]
+binding = "PROVISIONING_QUEUE"
+queue = "rarebooks-provisioning"
+
+[[queues.consumers]]
+queue = "rarebooks-provisioning"
+max_batch_size = 1
+max_retries = 4                 # 5 deliveries in total
+retry_delay = 60                # crash redelivery only; explicit retries pass their own delay
+dead_letter_queue = "rarebooks-provisioning-dlq"
+
+[[queues.consumers]]
+queue = "rarebooks-provisioning-dlq"
+max_batch_size = 1
+max_retries = 3
+
+[limits]
+cpu_ms = 300000                 # ceiling (Workers Paid); lower once measured, see spec 0010 Follow-up
+
 [env.staging]
 name = "rarebooks-web-staging"
+routes = []   # don't inherit app.rarebooks.cc; the top level Worker keeps the custom domain
+
+[[env.staging.queues.producers]]
+binding = "PROVISIONING_QUEUE"
+queue = "rarebooks-provisioning-staging"
+
+[[env.staging.queues.consumers]]
+queue = "rarebooks-provisioning-staging"
+max_batch_size = 1
+max_retries = 4                 # 5 deliveries in total
+retry_delay = 60                # crash redelivery only; explicit retries pass their own delay
+dead_letter_queue = "rarebooks-provisioning-dlq-staging"
+
+[[env.staging.queues.consumers]]
+queue = "rarebooks-provisioning-dlq-staging"
+max_batch_size = 1
+max_retries = 3
+
+[env.staging.limits]
+cpu_ms = 300000                 # ceiling (Workers Paid); lower once measured, see spec 0010 Follow-up
+
 
 [env.production]
 name = "rarebooks-web-production"
+routes = []   # don't inherit app.rarebooks.cc until the domain cutover (spec 0007); remove then
+
+[[env.production.queues.producers]]
+binding = "PROVISIONING_QUEUE"
+queue = "rarebooks-provisioning-production"
+
+[[env.production.queues.consumers]]
+queue = "rarebooks-provisioning-production"
+max_batch_size = 1
+max_retries = 4                 # 5 deliveries in total
+retry_delay = 60                # crash redelivery only; explicit retries pass their own delay
+dead_letter_queue = "rarebooks-provisioning-dlq-production"
+
+[[env.production.queues.consumers]]
+queue = "rarebooks-provisioning-dlq-production"
+max_batch_size = 1
+max_retries = 3
+
+[env.production.limits]
+cpu_ms = 300000                 # ceiling (Workers Paid); lower once measured, see spec 0010 Follow-up

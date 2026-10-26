@@ -15,10 +15,29 @@ CREATE TABLE IF NOT EXISTS tenant_projects (
   neon_project_id text NOT NULL,
   connection_string text NOT NULL,   -- AES-256-GCM encrypted at rest with TENANT_ENCRYPTION_KEY; never logged or returned in an API response
   region text NOT NULL,
+  -- The provisioning lease (spec 0010): the queue message id (or the
+  -- migration runner's random id) holding the row, and when it took it. A
+  -- claim older than 20 minutes, or with a NULL claimed_at, is expired.
   provisioning_claim_id text,
+  provisioning_claimed_at timestamptz,
+  provisioning_attempts integer NOT NULL DEFAULT 0,  -- lifetime successful claims, informational only
+  provisioning_last_error text,      -- sanitized; never holds a connection string or key
   status text NOT NULL DEFAULT 'PROVISIONING'
     CHECK (status IN ('PROVISIONING', 'PROJECT_CREATED', 'READY', 'SUSPENDED', 'FAILED')),
   created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Neon projects named rarebooks-tenant-* that no tenant_projects row points
+-- at (spec 0010). Points at Neon, not a row, so no FK on org_id (the org may
+-- not exist). Written by the provisioning consumer (DUPLICATE_NAME) and by
+-- `npm run reconcile:tenants`; deleted_at only by `reconcile:tenants -- --delete`.
+CREATE TABLE IF NOT EXISTS neon_project_orphans (
+  neon_project_id text PRIMARY KEY,
+  org_id text,
+  reason text NOT NULL
+    CHECK (reason IN ('DUPLICATE_NAME', 'NO_TENANT_ROW', 'MISMATCHED_TENANT_ROW')),
+  detected_at timestamptz NOT NULL DEFAULT now(),
+  deleted_at timestamptz
 );
 
 -- subscriptions and payments are created here (0001) but populated by
