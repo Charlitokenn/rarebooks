@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "skills": {
+    "neon": {
+      "source": "neondatabase/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/neon/SKILL.md",
+      "computedHash": "be346e41230da99ec27555ea8eb781a398568a5c8d70bdc1e5d82d3f2547f2f0"
+    },
+    "workers-best-practices": {
+      "source": "cloudflare/skills",
+      "sourceType": "github",
+      "skillPath": "skills/workers-best-practices/SKILL.md",
+      "computedHash": "70f0d8f00982c6b3b2688447079c8e06b0cfc1be4a3f3a555528623ee97498f4"
+    },
+    "wrangler": {
+      "source": "cloudflare/skills",
+      "sourceType": "github",
+      "skillPath": "skills/wrangler/SKILL.md",
+      "computedHash": "9eed4d658a9e8741d17cd4666701d25d4ca302a253dd62080338f473d051c50e"
+    }
+  }
+}

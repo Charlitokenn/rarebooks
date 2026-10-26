@@ -17,6 +17,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 04 | Expense tracking, full feature | Phase 3: Accounting Extensions | existing |
 | 05 | Inventory & payment notifications | Phase 3: Accounting Extensions | existing |
 | 06 | Web platform foundation & control plane | Phase 4: Web Migration | in-progress |
+| 16 | Provisioning claim lease & orphan tracking | Phase 4: Web Migration | in-progress |
 | 07 | Tenant schema & data layer | Phase 4: Web Migration | in-progress |
 | 08 | Subscription gating & seat sync | Phase 4: Web Migration | in-progress |
 | 15 | Web accounting setup wizard | Phase 4: Web Migration | in-progress |
@@ -69,6 +70,21 @@ All 5 milestones are code-complete and typecheck clean (verified against real, c
 `/check verify` (2026-09-05) confirmed, running the worker locally (`npm install`, `tsc --noEmit`, `wrangler dev --local` with placeholder secrets): typecheck is clean; the server boots and `GET /` returns `200`; `/api/me` and `/api/dashboard` correctly return `401 Unauthenticated` with no session; `POST /webhooks/clerk/organization-created` correctly returns `400 Invalid webhook signature` for an unverified payload (AC-4's rejection path). All client side surfaces from the build plan exist (`fyo/demux/{auth,config,db}.ts` use `fetch()`, no `ipcRenderer`; `src/pages/web/{SignIn,SignUp,CreateOrganization,Dashboard}.vue`; `src/web/router.ts`; `rendererWeb.ts`), and `src/` has no direct import of `worker/` (one code comment mentions the path, not an import), holding the client/server invariant.
 
 Still blocked, not yet provable from the build/verify environment used: AC-1's actual sign up/sign in (needs a live Clerk instance), AC-2's real provisioning path and AC-3's tables (needs a live Neon project; `worker/db/schema.sql` is still unapplied to any real Neon project), and AC-5's `PROJECT_CREATED` dashboard gate for a real authenticated session. Charles confirmed local `.env`/secrets are in place on his own machine, but that hasn't yet been exercised in an environment with outbound access to Cloudflare, Neon, or Clerk, so `Verify it` stays unticked below. Before `Verify it` can be closed: confirm the Neon, Clerk, and Cloudflare accounts/projects are live, apply `worker/db/schema.sql` to the real control plane project, and run `wrangler dev` (or `wrangler deploy`) end to end against them.
+
+### 16. Provisioning claim lease & orphan tracking · in-progress · from spec 0010
+Move tenant provisioning off the `organization.created` webhook onto a Cloudflare Queue, give the provisioning claim a lease so a crashed attempt is always recovered, and make sure no Neon project is ever created and then forgotten. Fixes the first two Major findings of the 2026-10-26 review against feature 06.
+**Done when:** a new org reaches `READY` through the queue consumer with exactly one Neon project, a crashed or failing attempt always ends `READY` or `FAILED` with a reason (never stuck `PROVISIONING`), and every `rarebooks-tenant-*` Neon project is either referenced by a tenant row or listed in the orphan ledger after `npm run reconcile:tenants`.
+- [x] Design it (spec): `/architect provisioning claim lease and orphan tracking`
+- [ ] Build it: `/develop provisioning claim lease and orphan tracking`
+    - [ ] Workers Paid, queues and DLQ per env, `0010-provisioning-lease.sql` migration, satisfies AC-1, AC-2, AC-3, AC-7, AC-9, AC-11
+    - [x] Thin thread: webhook enqueues, consumer claims by message id, creates, migrates, marks `READY`, unfenced writers deleted, satisfies AC-1, AC-2, AC-4
+    - [x] Lease, adopt before create, `FAILED` reuse, bounded retries, DLQ backstop, structured logs, satisfies AC-3, AC-5, AC-6, AC-7, AC-11, AC-12
+    - [x] Runner lease plus `provision:retry` and `reconcile:tenants` operator scripts, and the real Postgres SQL tests, satisfies AC-8, AC-9, AC-10
+- [ ] Verify it: `/check verify provisioning claim lease and orphan tracking`
+- [ ] Test it: `/test provisioning claim lease and orphan tracking`
+- [ ] Review it (fresh model): `/check review provisioning claim lease and orphan tracking`
+- [ ] Document it: `/document provisioning claim lease and orphan tracking`
+  Spec [0010](../specs/0010-provisioning-claim-lease-orphans/index.md). code in `worker/index.ts`, `worker/queues/`, `worker/routes/webhooks/`, `worker/db/control.ts`, `worker/db/migrations/0010-provisioning-lease.sql`, `worker/lib/neon-client.ts`, `custom/web/auth/`, `custom/web/db/tenantMigrationRunner.ts`, `scripts/`
 
 ### 07. Tenant schema & data layer · in-progress
 Apply the accounting schema to freshly provisioned tenant projects, and route doc CRUD through the correct per tenant connection, so the same doctypes and forms Desktop already has work through the Web stack.

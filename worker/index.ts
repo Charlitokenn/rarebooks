@@ -12,8 +12,10 @@ import { dashboardRoute } from './routes/dashboard';
 import { dbRoute } from './routes/db';
 import { subscriptionStatusRoute } from './routes/subscription-status';
 import { organizationCreatedRoute } from './routes/webhooks/organization-created';
+import { queue } from './queues/provisioning';
+import type { ProvisioningMessageBody } from '../custom/web/auth/handleOrganizationCreated';
 
-const app = new Hono<{ Bindings: WorkerEnv }>();
+export const app = new Hono<{ Bindings: WorkerEnv }>();
 
 // Injects the Clerk session into context for every route below; routes that
 // need it enforce it themselves via requireOrgSession (worker/middleware/clerk-auth.ts).
@@ -30,4 +32,9 @@ app.route('/api/db', dbRoute);
 app.route('/api/subscription/status', subscriptionStatusRoute);
 app.route('/webhooks/organization-created', organizationCreatedRoute);
 
-export default app;
+// The queue() handler consumes tenant provisioning off the queue the
+// webhook feeds (spec 0010).
+export default {
+  fetch: app.fetch,
+  queue,
+} satisfies ExportedHandler<WorkerEnv, ProvisioningMessageBody>;

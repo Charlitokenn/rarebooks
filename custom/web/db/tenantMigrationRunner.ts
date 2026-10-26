@@ -28,7 +28,16 @@
  * The connection string is decrypted in memory here and only ever handed to
  * `migrateTenantProject` — never logged, never returned.
  *
+ * `--include-project-created` takes the same provisioning lease the queue
+ * consumer does (spec 0010 AC-10): a random claim id per row, the same
+ * claimable predicate, and READY written only under that claim. So a row
+ * the consumer is working on is skipped, and a row the runner holds can't
+ * be taken by the consumer until its lease is released or expires.
+ * `PROVISIONING_LEASE_SQL` below is a byte identical copy of
+ * worker/db/control.ts's (same import wall as decrypt).
+ *
  * Spec: docs/specs/0002-tenant-schema-data-layer.md (AC-5)
+ * Spec: docs/specs/0010-provisioning-claim-lease-orphans/index.md (AC-10)
  */
 import { neon } from 'pg';
 import DatabaseCore from '../../../backend/database/core';
@@ -37,10 +46,13 @@ import { newTenantKnexConfig } from './knexPgConfig';
 import { seedDefaultEntries } from './seedDefaultEntries';
 import type { RawCustomField } from '../../../backend/database/types';
 
-export type ControlQueryFn = (
+export type ControlQueryFn = ((
   strings: TemplateStringsArray,
   ...values: unknown[]
-) => PromiseLike<unknown>;
+) => PromiseLike<unknown>) & {
+  /** Raw SQL interpolation (`neon()`'s `sql.unsafe`), used only for the lease. */
+  unsafe(rawSql: string): unknown;
+};
 
 export interface RunnerSecrets {
   controlDatabaseUrl: string;
@@ -51,13 +63,15 @@ export interface RunnerOptions {
   /** Limit the rollout to one tenant (org repair, staged canary). */
   orgId?: string;
   /**
-   * Also migrate `PROJECT_CREATED` tenants — the recovery path when the
-   * provisioning webhook created the Neon project but died before its own
-   * schema-migration step ran. A successful run under this flag advances
-   * them to `READY`. `PROVISIONING`, `SUSPENDED`, and `FAILED` tenants are
-   * always left alone: an in-flight webhook, a billing suspension, and a
-   * provisioning failure needing repair are none of them schema-rollout
-   * targets.
+   * Also migrate `PROJECT_CREATED` tenants — the recovery path when
+   * provisioning created the Neon project but died before its own
+   * schema-migration step ran. Each one is migrated under the runner's own
+   * provisioning lease (spec 0010 AC-10) and advances to `READY` on
+   * success; one whose lease is held elsewhere is skipped as provisioning
+   * in flight. `PROVISIONING`, `SUSPENDED`, and `FAILED` tenants are always
+   * left alone: in-flight provisioning, a billing suspension, and a
+   * provisioning failure (`npm run provision:retry`) are none of them
+   * schema-rollout targets.
    */
   includeProjectCreated: boolean;
   dryRun: boolean;
@@ -73,7 +87,7 @@ export interface TenantMigrationSummary {
   scanned: number;
   wouldMigrate: number;
   migrated: number;
-  skipped: { orgId: string; status: string }[];
+  skipped: { orgId: string; status: string; reason?: string }[];
   failed: { orgId: string; error: string }[];
 }
 
@@ -84,11 +98,24 @@ export interface RunnerDeps {
     orgId: string,
     connectionString: string
   ) => Promise<void>;
-  markTenantReady?: (db: ControlQueryFn, orgId: string) => Promise<boolean>;
+  claimProjectCreated?: (
+    db: ControlQueryFn,
+    claim: { orgId: string; claimId: string }
+  ) => Promise<string | null>;
+  releaseProjectCreated?: (
+    db: ControlQueryFn,
+    claim: { orgId: string; claimId: string }
+  ) => Promise<void>;
+  markTenantReady?: (
+    db: ControlQueryFn,
+    claim: { orgId: string; claimId: string }
+  ) => Promise<boolean>;
   log?: (message: string) => void;
 }
 
 const LOG_PREFIX = '[tenant-migration-runner]';
+// Copy of worker/db/control.ts's; see this file's header.
+export const PROVISIONING_LEASE_SQL = "interval '20 minutes'";
 const IV_LENGTH_BYTES = 12; // matches worker/lib/encryption.ts
 
 export function isMigratableStatus(
@@ -150,22 +177,69 @@ export async function listTenantProjects(
 }
 
 /**
- * Conditional by design: only advances a row that is still
- * `PROJECT_CREATED`, so a concurrent provisioning webhook that already
- * advanced the tenant is reported (by the false return) rather than
- * stomped. Matches the shape of worker/db/control.ts's status updates.
+ * Takes the provisioning lease on a PROJECT_CREATED row (the consumer's claim
+ * statement, PROJECT_CREATED only). Returns the encrypted connection string,
+ * or null when a live lease is held elsewhere (provisioning in flight) or
+ * the row has moved on.
+ */
+export async function claimProjectCreatedTenant(
+  db: ControlQueryFn,
+  claim: { orgId: string; claimId: string }
+): Promise<string | null> {
+  const rows = (await db`
+    UPDATE tenant_projects SET
+      provisioning_claim_id   = ${claim.claimId},
+      provisioning_claimed_at = now(),
+      provisioning_attempts   = provisioning_attempts + 1
+    WHERE org_id = ${claim.orgId}
+      AND status = 'PROJECT_CREATED'
+      AND (provisioning_claim_id IS NULL
+           OR provisioning_claim_id = ${claim.claimId}
+           OR provisioning_claimed_at IS NULL
+           OR provisioning_claimed_at < now() - ${db.unsafe(PROVISIONING_LEASE_SQL)})
+    RETURNING connection_string
+  `) as Array<{ connection_string: string }>;
+  return rows[0]?.connection_string ?? null;
+}
+
+/**
+ * Advances the row to READY, fenced by the runner's own claim, and clears
+ * the lease and last error (READY implies no claim). False means the lease
+ * was lost underneath it.
  */
 export async function markTenantProjectReady(
   db: ControlQueryFn,
-  orgId: string
+  claim: { orgId: string; claimId: string }
 ): Promise<boolean> {
   const rows = (await db`
-    UPDATE tenant_projects
-    SET status = 'READY', provisioning_claim_id = NULL
-    WHERE org_id = ${orgId} AND status = 'PROJECT_CREATED'
+    UPDATE tenant_projects SET
+      status = 'READY',
+      provisioning_claim_id = NULL,
+      provisioning_claimed_at = NULL,
+      provisioning_last_error = NULL
+    WHERE org_id = ${claim.orgId}
+      AND provisioning_claim_id = ${claim.claimId}
+      AND status = 'PROJECT_CREATED'
     RETURNING org_id
   `) as Array<{ org_id: string }>;
   return rows.length === 1;
+}
+
+/**
+ * Hands the lease back after a failed migrate, so the consumer (or the next
+ * run) can take the row at once instead of waiting out the 20 minutes.
+ */
+export async function releaseProjectCreatedTenant(
+  db: ControlQueryFn,
+  claim: { orgId: string; claimId: string }
+): Promise<void> {
+  await db`
+    UPDATE tenant_projects SET
+      provisioning_claim_id = NULL,
+      provisioning_claimed_at = NULL
+    WHERE org_id = ${claim.orgId}
+      AND provisioning_claim_id = ${claim.claimId}
+  `;
 }
 
 /**
@@ -234,6 +308,8 @@ export async function runTenantMigrations(
     ((orgId: string, connectionString: string) =>
       migrateTenantProject(orgId, connectionString, log));
   const setReady = deps.markTenantReady ?? markTenantProjectReady;
+  const claimRow = deps.claimProjectCreated ?? claimProjectCreatedTenant;
+  const releaseRow = deps.releaseProjectCreated ?? releaseProjectCreatedTenant;
 
   const records = await listTenantProjects(db, options.orgId);
   if (options.orgId && records.length === 0) {
@@ -264,25 +340,51 @@ export async function runTenantMigrations(
       continue;
     }
 
+    // A PROJECT_CREATED row is migrated only under the runner's own lease.
+    const claim =
+      record.status === 'PROJECT_CREATED'
+        ? { orgId: record.orgId, claimId: crypto.randomUUID() }
+        : null;
+
     try {
+      let encryptedConnectionString = record.encryptedConnectionString;
+      if (claim) {
+        const claimed = await claimRow(db, claim);
+        if (claimed === null) {
+          summary.wouldMigrate -= 1;
+          summary.skipped.push({
+            orgId: record.orgId,
+            status: record.status,
+            reason: 'provisioning in flight',
+          });
+          log(`${LOG_PREFIX} ${record.orgId}: skipped (provisioning in flight)`);
+          continue;
+        }
+        encryptedConnectionString = claimed;
+      }
+
       const connectionString = await decrypt(
-        record.encryptedConnectionString,
+        encryptedConnectionString,
         secrets.tenantEncryptionKey
       );
       log(`${LOG_PREFIX} ${record.orgId}: migrating`);
       await migrate(record.orgId, connectionString);
-      if (record.status === 'PROJECT_CREATED') {
-        const advanced = await setReady(db, record.orgId);
+      if (claim) {
+        const advanced = await setReady(db, claim);
         log(
           `${LOG_PREFIX} ${record.orgId}: ${
             advanced
               ? 'status PROJECT_CREATED -> READY'
-              : 'status already changed underneath, left alone'
+              : 'lease lost underneath, left alone'
           }`
         );
       }
       summary.migrated += 1;
     } catch (err) {
+      if (claim) {
+        // Best effort; an unreleased lease simply expires in 20 minutes.
+        await releaseRow(db, claim).catch(() => undefined);
+      }
       // One failing tenant must not abort the rollout of the rest.
       const message = err instanceof Error ? err.message : String(err);
       summary.failed.push({ orgId: record.orgId, error: message });

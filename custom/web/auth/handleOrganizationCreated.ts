@@ -1,43 +1,63 @@
 /**
- * Provisions a new, isolated Neon project the moment a Clerk organization
- * is created, and records it in the control plane. This is the heart of
- * feature 0001 — everything else in the web migration depends on an org
- * having a provisioned tenant project.
+ * The provisioning queue consumer: takes `{ orgId }` off the provisioning
+ * queue and drives that org's tenant row to READY, with exactly one Neon
+ * project named `rarebooks-tenant-<orgId>`. The `organization.created`
+ * webhook (worker/routes/webhooks/organization-created.ts) only records the
+ * org and enqueues; everything slow happens here, outside the webhook's
+ * timeout, with the queue's own retries behind it.
  *
- * Called from worker/routes/webhooks/organization-created.ts AFTER the
- * webhook signature has already been verified there — this function trusts
- * its input and does not re-verify anything.
+ * Every attempt claims the row with a 20 minute lease keyed by the queue
+ * message id, and every write after the claim is fenced by that id, so a
+ * run whose lease was taken over changes nothing. Before creating a project
+ * it reuses the one recorded on the row, or adopts one Neon already has by
+ * name, so a crash between "Neon created it" and "we recorded it" never
+ * leaves a second, billed project behind. Anything that still slips through
+ * goes in the orphan ledger for `npm run reconcile:tenants`.
  *
- * Never import custom/licensing/ (Keymint) from this file or anything it
- * calls — the web target has no device-bound licensing.
+ * Reads nothing from Clerk. Never import custom/licensing/ (Keymint) from
+ * this file or anything it calls — the web target has no device-bound
+ * licensing.
  *
- * Spec: docs/specs/0001-web-platform-foundation-control-plane.md
+ * Spec: docs/specs/0010-provisioning-claim-lease-orphans/index.md (consumer
+ * algorithm, dead letter consumer, AC-2 to AC-7, AC-12)
+ * Amends: docs/specs/0001-web-platform-foundation-control-plane.md (AC-2)
  */
 import {
-  claimTenantProject,
-  claimTenantProjectMigration,
+  claimProvisioningLease,
   type ControlDb,
-  failTenantProjectClaim,
-  getControlDb,
-  insertOrganization,
-  insertTenantProject,
-  releaseTenantProjectMigration,
-  setTenantProjectStatus,
+  ensureTenantProjectRow,
+  failDeadLetteredTenantProject,
+  getProvisioningState,
+  insertNeonProjectOrphan,
+  markTenantProjectReady,
+  recordProvisioningFailure,
+  recordTenantProject,
 } from '../../../worker/db/control';
 import { decrypt, encrypt } from '../../../worker/lib/encryption';
 import { applyTenantSchema } from './applyTenantSchema';
 
-// Deliberately NOT importing @clerk/backend's OrganizationJSON here: this
-// file lives under custom/ (the root package's tree), not worker/, and
-// @clerk/backend is only installed in worker/node_modules — the two are
-// separate packages (see worker/package.json vs the root package.json).
-// worker/routes/webhooks/organization-created.ts maps the real, fully
-// typed Clerk event down to this minimal shape at the boundary.
-export interface ClerkOrganizationCreatedEvent {
-  data: {
-    id: string; // Clerk org ID
-    name: string;
-  };
+/** The whole queue message body. Never a connection string. */
+export interface ProvisioningMessageBody {
+  orgId: string;
+}
+
+/**
+ * The slice of a Cloudflare Queues `Message` this file uses. Declared here
+ * rather than imported because custom/web/ also compiles under the root
+ * tsconfig, which has no Workers types; the real `Message` fits it.
+ */
+export interface ProvisioningMessage {
+  readonly id: string;
+  /** 1 based; a crash uses up a delivery too. */
+  readonly attempts: number;
+  ack(): void;
+  retry(options?: { delaySeconds?: number }): void;
+}
+
+export interface NeonProjectSummary {
+  id: string;
+  createdAt: string;
+  region: string;
 }
 
 export interface NeonProvisioningClient {
@@ -50,84 +70,312 @@ export interface NeonProvisioningClient {
     connectionString: string;
     region: string;
   }>;
+  /** Every project named exactly `name`, across every page, oldest first. */
+  findProjectsByName(name: string): Promise<NeonProjectSummary[]>;
+  /** Connection string for an adopted project's single database. Throws
+   * ProvisioningNotReadyError while the project can't be used yet. */
+  getConnectionString(projectId: string): Promise<string>;
 }
 
-export interface HandleOrgCreatedEnv {
-  CONTROL_DATABASE_URL: string;
-  TENANT_ENCRYPTION_KEY: string;
+/**
+ * An adopted project Neon reports as not usable yet (zero or several
+ * databases, unfinished operations, endpoint not ready). Transient: it
+ * goes through the normal failure record and retry like any other error.
+ */
+export class ProvisioningNotReadyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProvisioningNotReadyError';
+  }
 }
 
-export async function handleOrganizationCreated(
-  event: ClerkOrganizationCreatedEvent,
-  env: HandleOrgCreatedEnv,
-  neonClient: NeonProvisioningClient,
-  controlDb: ControlDb = getControlDb(env),
-  applySchema: typeof applyTenantSchema = applyTenantSchema
+export interface ProvisionTenantDeps {
+  controlDb: ControlDb;
+  neon: NeonProvisioningClient;
+  /** TENANT_ENCRYPTION_KEY */
+  encryptionKey: string;
+  applySchema?: typeof applyTenantSchema;
+}
+
+/** The 5th delivery's failure marks the row FAILED (max_retries = 4). */
+export const MAX_PROVISIONING_DELIVERIES = 5;
+/** Retry delay after a failed attempt, indexed by `attempts - 1`. */
+export const PROVISIONING_RETRY_DELAYS_SECONDS = [60, 300, 900, 1800];
+/** The DLQ's final delivery (its max_retries = 3) fails the row regardless of the lease. */
+export const DEAD_LETTER_FINAL_DELIVERY = 4;
+/** Just past the 20 minute lease. */
+export const DEAD_LETTER_LEASE_WAIT_SECONDS = 1260;
+
+export function tenantProjectName(orgId: string): string {
+  return `rarebooks-tenant-${orgId}`;
+}
+
+export function errorClass(err: unknown): string {
+  if (err instanceof Error) {
+    return err.name !== 'Error' ? err.name : err.constructor.name || 'Error';
+  }
+  return typeof err;
+}
+
+const CONNECTION_STRING_PATTERN = /postgres(ql)?:\/\/\S+/g;
+
+/**
+ * What gets stored in `provisioning_last_error`: the error's class, the Neon
+ * HTTP status if any, and the first 200 characters of its message with any
+ * connection string redacted (AC-12). Never the raw error.
+ */
+export function sanitizeError(err: unknown): string {
+  const status = (err as { status?: unknown } | null)?.status;
+  const httpStatus = typeof status === 'number' ? ` (HTTP ${status})` : '';
+  const message = err instanceof Error ? err.message : String(err);
+  const redacted = message
+    .slice(0, 200)
+    .replace(CONNECTION_STRING_PATTERN, '[redacted]');
+  return `${errorClass(err)}${httpStatus}: ${redacted}`;
+}
+
+type ProvisioningEvent =
+  | 'provisioning.ready'
+  | 'provisioning.adopted_project'
+  | 'provisioning.duplicate_projects'
+  | 'provisioning.already_done'
+  | 'provisioning.deferred_live_claim'
+  | 'provisioning.claim_lost'
+  | 'provisioning.attempt_failed'
+  | 'provisioning.failed'
+  | 'provisioning.dead_lettered';
+
+const ERROR_EVENTS = new Set<ProvisioningEvent>([
+  'provisioning.attempt_failed',
+  'provisioning.failed',
+  'provisioning.dead_lettered',
+]);
+
+/**
+ * One JSON line per event (AC-12). Callers pass ids, counts, and delays
+ * only; never a connection string, key, or raw error message.
+ */
+function logEvent(
+  event: ProvisioningEvent,
+  fields: { orgId: string; attempt: number } & Record<
+    string,
+    string | number | boolean | string[]
+  >
+): void {
+  const line = JSON.stringify({ event, ...fields });
+  if (ERROR_EVENTS.has(event)) {
+    console.error(line);
+  } else {
+    console.log(line);
+  }
+}
+
+/**
+ * Consumer algorithm steps 1 to 7. Throws only before the claim (the row
+ * upsert) or when recording a failure itself fails; the platform then
+ * redelivers, and an abandoned lease expires on its own.
+ */
+export async function provisionTenant(
+  orgId: string,
+  message: ProvisioningMessage,
+  deps: ProvisionTenantDeps
 ): Promise<void> {
-  const orgId = event.data.id;
+  const { controlDb } = deps;
+  const claimId = message.id;
+  const attempt = message.attempts;
 
-  // 1. Record the org itself, before attempting to provision anything.
-  await insertOrganization(controlDb, { id: orgId, name: event.data.name });
+  // 1. The row exists before any Neon call; then take the lease.
+  await ensureTenantProjectRow(controlDb, orgId);
+  const claimed = await claimProvisioningLease(controlDb, { orgId, claimId });
 
-  const claimId = crypto.randomUUID();
-  const claimed = await claimTenantProject(controlDb, { orgId, claimId });
-  let connectionString: string;
+  // 2. Refused: done already, or someone else holds a live lease.
   if (!claimed) {
-    const encryptedConnectionString = await claimTenantProjectMigration(
-      controlDb,
-      { orgId, claimId }
-    );
-    if (!encryptedConnectionString) {
+    const state = await getProvisioningState(controlDb, { orgId, claimId });
+    if (!state) {
+      throw new Error(`tenant_projects row for ${orgId} vanished after upsert`);
+    }
+    if (state.status === 'READY' || state.status === 'SUSPENDED') {
+      message.ack();
+      logEvent('provisioning.already_done', {
+        orgId,
+        attempt,
+        status: state.status,
+      });
       return;
     }
-    connectionString = await decrypt(
-      encryptedConnectionString,
-      env.TENANT_ENCRYPTION_KEY
-    );
-  } else {
-    try {
-      // 2. Provision a dedicated, isolated Neon project for this org.
-      //    This is a real network call to Neon's API — see Follow-up in
-      //    docs/specs/0001 re: confirming the exact Workers-compatible
-      //    client package before this runs against a live Neon account.
-      const provisioned = await neonClient.createAndConnect({
-        name: `rarebooks-tenant-${orgId}`,
-      });
-      connectionString = provisioned.connectionString;
+    const delaySeconds = Math.max(state.lease_remaining_seconds ?? 0, 0) + 60;
+    message.retry({ delaySeconds });
+    logEvent('provisioning.deferred_live_claim', {
+      orgId,
+      attempt,
+      delaySeconds,
+    });
+    return;
+  }
 
-      // 3. Encrypt the connection string before it ever touches storage.
-      const encryptedConnectionString = await encrypt(
-        connectionString,
-        env.TENANT_ENCRYPTION_KEY
-      );
+  const claimLost = () => {
+    // 7. Taken over: the new holder owns the row now. Change nothing.
+    message.ack();
+    logEvent('provisioning.claim_lost', { orgId, attempt });
+  };
 
-      const completed = await insertTenantProject(controlDb, {
+  try {
+    let connectionString: string;
+
+    if (claimed.neon_project_id === '') {
+      // 3. No project recorded: adopt one by name, else create it.
+      const project = await findOrCreateProject(orgId, attempt, deps);
+      const recorded = await recordTenantProject(controlDb, {
         orgId,
         claimId,
-        neonProjectId: provisioned.neonProjectId,
-        encryptedConnectionString,
-        region: provisioned.region,
+        neonProjectId: project.neonProjectId,
+        encryptedConnectionString: await encrypt(
+          project.connectionString,
+          deps.encryptionKey
+        ),
+        region: project.region,
       });
-      if (!completed) {
-        throw new Error('Tenant provisioning claim was lost before completion');
+      if (!recorded) {
+        return claimLost();
       }
-    } catch (err) {
-      await failTenantProjectClaim(controlDb, { orgId, claimId });
-      throw err;
+      connectionString = project.connectionString;
+    } else {
+      // 4. Recorded already (a resume, or a FAILED retry): same project.
+      connectionString = await decrypt(
+        claimed.connection_string,
+        deps.encryptionKey
+      );
+    }
+
+    await (deps.applySchema ?? applyTenantSchema)(connectionString);
+
+    // 5. READY, fenced by the claim.
+    if (!(await markTenantProjectReady(controlDb, { orgId, claimId }))) {
+      return claimLost();
+    }
+    message.ack();
+    logEvent('provisioning.ready', { orgId, attempt });
+  } catch (err) {
+    // 6. One fenced statement records the error and releases the lease.
+    const final = attempt >= MAX_PROVISIONING_DELIVERIES;
+    const recorded = await recordProvisioningFailure(controlDb, {
+      orgId,
+      claimId,
+      error: sanitizeError(err),
+      final,
+    });
+    if (!recorded) {
+      return claimLost();
+    }
+    if (final) {
+      message.ack();
+      logEvent('provisioning.failed', {
+        orgId,
+        attempt,
+        errorClass: errorClass(err),
+      });
+      return;
+    }
+    const delaySeconds =
+      PROVISIONING_RETRY_DELAYS_SECONDS[attempt - 1] ??
+      PROVISIONING_RETRY_DELAYS_SECONDS[
+        PROVISIONING_RETRY_DELAYS_SECONDS.length - 1
+      ];
+    message.retry({ delaySeconds });
+    logEvent('provisioning.attempt_failed', {
+      orgId,
+      attempt,
+      errorClass: errorClass(err),
+      delaySeconds,
+    });
+  }
+}
+
+/**
+ * Adopt before create (AC-5): the oldest exact name match wins, every other
+ * match is ledgered DUPLICATE_NAME, and only when there are none does it
+ * create a project.
+ */
+async function findOrCreateProject(
+  orgId: string,
+  attempt: number,
+  deps: ProvisionTenantDeps
+): Promise<{
+  neonProjectId: string;
+  connectionString: string;
+  region: string;
+}> {
+  const name = tenantProjectName(orgId);
+  const matches = await deps.neon.findProjectsByName(name);
+
+  if (matches.length === 0) {
+    return deps.neon.createAndConnect({ name });
+  }
+
+  const [oldest, ...duplicates] = matches;
+  for (const duplicate of duplicates) {
+    await insertNeonProjectOrphan(deps.controlDb, {
+      neonProjectId: duplicate.id,
+      orgId,
+      reason: 'DUPLICATE_NAME',
+    });
+  }
+  if (duplicates.length > 0) {
+    logEvent('provisioning.duplicate_projects', {
+      orgId,
+      attempt,
+      neonProjectIds: duplicates.map((d) => d.id),
+    });
+  }
+
+  const connectionString = await deps.neon.getConnectionString(oldest.id);
+  logEvent('provisioning.adopted_project', {
+    orgId,
+    attempt,
+    neonProjectId: oldest.id,
+  });
+  return { neonProjectId: oldest.id, connectionString, region: oldest.region };
+}
+
+/**
+ * The dead letter consumer (AC-7). Its message ids differ from the
+ * original's, so it never matches a claim: it waits out a live lease, then
+ * marks the row FAILED, and on its own final delivery fails it regardless.
+ */
+export async function handleDeadLetteredProvisioning(
+  orgId: string,
+  message: ProvisioningMessage,
+  deps: { controlDb: ControlDb }
+): Promise<void> {
+  const attempt = message.attempts;
+  const force = attempt >= DEAD_LETTER_FINAL_DELIVERY;
+  const failed = await failDeadLetteredTenantProject(deps.controlDb, {
+    orgId,
+    force,
+  });
+
+  if (!failed && !force) {
+    const state = await getProvisioningState(deps.controlDb, {
+      orgId,
+      claimId: message.id,
+    });
+    if (state?.live_foreign_claim) {
+      message.retry({ delaySeconds: DEAD_LETTER_LEASE_WAIT_SECONDS });
+      logEvent('provisioning.dead_lettered', {
+        orgId,
+        attempt,
+        outcome: 'waiting_for_lease',
+        delaySeconds: DEAD_LETTER_LEASE_WAIT_SECONDS,
+      });
+      return;
     }
   }
 
-  try {
-    await applySchema(connectionString);
-  } catch (migrateErr) {
-    await setTenantProjectStatus(controlDb, orgId, 'FAILED');
-    throw migrateErr;
-  }
-
-  try {
-    await setTenantProjectStatus(controlDb, orgId, 'READY');
-  } catch (statusErr) {
-    await releaseTenantProjectMigration(controlDb, { orgId, claimId });
-    throw statusErr;
-  }
+  message.ack();
+  logEvent('provisioning.dead_lettered', {
+    orgId,
+    attempt,
+    // 'settled': the row was already READY, SUSPENDED, or FAILED.
+    outcome: failed ? 'marked_failed' : 'settled',
+  });
 }

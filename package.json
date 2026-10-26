@@ -21,6 +21,8 @@
     "script:translate": "scripts/runner.sh scripts/generateTranslations.ts",
     "script:profile": "scripts/profile.sh",
     "migrate:tenants": "scripts/migrate-tenants.sh",
+    "provision:retry": "node scripts/provision-retry.mjs",
+    "reconcile:tenants": "node scripts/reconcile-tenants.mjs",
     "seed:subscription": "scripts/seed-subscription.sh",
     "test": "scripts/test.sh",
     "check:ntfy": "node scripts/ntfy-web-publish-check.mjs",

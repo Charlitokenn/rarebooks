@@ -8,7 +8,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { verifyWebhook } from '@clerk/hono/webhooks';
-import app from '../index';
+import { app } from '../index';
 
 vi.mock('@clerk/hono', () => ({
   clerkMiddleware: () => async (_c: unknown, next: () => Promise<void>) =>

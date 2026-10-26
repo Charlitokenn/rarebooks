@@ -21,12 +21,21 @@ interface FakeDb {
   db: ControlQueryFn;
   queries: string[];
   readyWrites: string[];
+  leases: Map<string, { claimId: string; liveLease: boolean }>;
 }
 
-function createFakeDb(records: TenantProjectRecord[]): FakeDb {
+/**
+ * `leases` seeds a provisioning claim per org: `liveLease: true` is one held
+ * within the 20 minutes (the SQL's claimable predicate refuses it), false
+ * an expired one. The claim and READY statements below honour it.
+ */
+function createFakeDb(
+  records: TenantProjectRecord[],
+  leases: Map<string, { claimId: string; liveLease: boolean }> = new Map()
+): FakeDb {
   const queries: string[] = [];
   const readyWrites: string[] = [];
-  const db = (async (
+  const query = (async (
     strings: TemplateStringsArray,
     ...values: unknown[]
   ): Promise<unknown> => {
@@ -50,21 +59,45 @@ function createFakeDb(records: TenantProjectRecord[]): FakeDb {
       }));
     }
 
-    if (sql.startsWith('UPDATE tenant_projects')) {
-      const orgId = values[0] as string;
+    if (sql.startsWith('UPDATE tenant_projects SET provisioning_claim_id = ?')) {
+      const [claimId, orgId] = values as string[];
       const row = records.find((r) => r.orgId === orgId);
-      if (row?.status === 'PROJECT_CREATED') {
+      const lease = leases.get(orgId);
+      if (
+        row?.status !== 'PROJECT_CREATED' ||
+        (lease?.liveLease && lease.claimId !== claimId)
+      ) {
+        return [];
+      }
+      leases.set(orgId, { claimId, liveLease: true });
+      return [{ connection_string: row.encryptedConnectionString }];
+    }
+
+    if (sql.startsWith("UPDATE tenant_projects SET status = 'READY'")) {
+      const [orgId, claimId] = values as string[];
+      const row = records.find((r) => r.orgId === orgId);
+      if (row?.status === 'PROJECT_CREATED' && leases.get(orgId)?.claimId === claimId) {
         row.status = 'READY';
+        leases.delete(orgId);
         readyWrites.push(orgId);
         return [{ org_id: orgId }];
       }
       return [];
     }
 
+    if (sql.startsWith('UPDATE tenant_projects SET provisioning_claim_id = NULL')) {
+      const [orgId, claimId] = values as string[];
+      if (leases.get(orgId)?.claimId === claimId) leases.delete(orgId);
+      return [];
+    }
+
     throw new Error(`Unexpected control-plane query: ${sql}`);
+  });
+  const db = Object.assign(query, {
+    unsafe: (raw: string) => raw,
   }) as unknown as ControlQueryFn;
 
-  return { db, queries, readyWrites };
+  return { db, queries, readyWrites, leases };
 }
 
 const secrets = {
@@ -232,6 +265,95 @@ test('the recovery flag migrates PROJECT_CREATED tenants and advances them to RE
   t.equal(summary.migrated, 1);
   t.deepEqual(readyWrites, ['org-stranded'], 'the status write targeted it');
   t.equal(records[0].status, 'READY', 'conditional UPDATE advanced the row');
+  t.end();
+});
+
+test('a PROJECT_CREATED tenant under a live provisioning lease is skipped, not migrated (spec 0010 AC-10)', async (t) => {
+  const records: TenantProjectRecord[] = [
+    { orgId: 'org-in-flight', status: 'PROJECT_CREATED', encryptedConnectionString: 'blob' },
+  ];
+  const { db, readyWrites } = createFakeDb(
+    records,
+    new Map([['org-in-flight', { claimId: 'queue-msg-1', liveLease: true }]])
+  );
+  let migrateCount = 0;
+
+  const summary = await runTenantMigrations(
+    secrets,
+    { includeProjectCreated: true, dryRun: false },
+    {
+      controlDb: db,
+      decrypt: async (connectionString) => connectionString,
+      log: () => undefined,
+      migrateTenantProject: async () => {
+        migrateCount += 1;
+      },
+    }
+  );
+
+  t.equal(migrateCount, 0, 'the consumer keeps the row');
+  t.equal(summary.migrated, 0);
+  t.deepEqual(summary.skipped, [
+    { orgId: 'org-in-flight', status: 'PROJECT_CREATED', reason: 'provisioning in flight' },
+  ]);
+  t.deepEqual(readyWrites, [], 'no READY write');
+  t.equal(records[0].status, 'PROJECT_CREATED');
+  t.end();
+});
+
+test('an expired lease is taken over, and the runner holds its own lease while migrating (spec 0010 AC-10)', async (t) => {
+  const records: TenantProjectRecord[] = [
+    { orgId: 'org-stranded', status: 'PROJECT_CREATED', encryptedConnectionString: 'blob' },
+  ];
+  const { db, leases } = createFakeDb(
+    records,
+    new Map([['org-stranded', { claimId: 'dead-queue-msg', liveLease: false }]])
+  );
+  let leaseDuringMigrate: { claimId: string; liveLease: boolean } | undefined;
+
+  const summary = await runTenantMigrations(
+    secrets,
+    { includeProjectCreated: true, dryRun: false },
+    {
+      controlDb: db,
+      decrypt: async (connectionString) => connectionString,
+      log: () => undefined,
+      migrateTenantProject: async () => {
+        leaseDuringMigrate = { ...leases.get('org-stranded')! };
+      },
+    }
+  );
+
+  t.equal(summary.migrated, 1);
+  t.ok(leaseDuringMigrate?.liveLease, 'a live lease is held while migrating');
+  t.notEqual(leaseDuringMigrate?.claimId, 'dead-queue-msg', 'under the runner\'s own claim id');
+  t.equal(records[0].status, 'READY', 'READY written under that claim');
+  t.equal(leases.has('org-stranded'), false, 'READY clears the lease');
+  t.end();
+});
+
+test('a failed migrate hands the runner\'s lease back (spec 0010 AC-10)', async (t) => {
+  const records: TenantProjectRecord[] = [
+    { orgId: 'org-x', status: 'PROJECT_CREATED', encryptedConnectionString: 'blob' },
+  ];
+  const { db, leases } = createFakeDb(records);
+
+  const summary = await runTenantMigrations(
+    secrets,
+    { includeProjectCreated: true, dryRun: false },
+    {
+      controlDb: db,
+      decrypt: async (connectionString) => connectionString,
+      log: () => undefined,
+      migrateTenantProject: async () => {
+        throw new Error('migrate boom');
+      },
+    }
+  );
+
+  t.equal(summary.failed.length, 1);
+  t.equal(records[0].status, 'PROJECT_CREATED');
+  t.equal(leases.has('org-x'), false, 'lease released so the consumer can take it at once');
   t.end();
 });
 
