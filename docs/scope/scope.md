@@ -60,7 +60,7 @@ Stand up the Hono API, Clerk auth, and the control plane Neon project. No accoun
     - [x] `fyo/demux/*.ts` web implementation + `rendererWeb.ts` entry point, plus the sign-in/sign-up/org-creation/dashboard UI (`src/pages/web/`, `src/web/router.ts`)
 - [x] Verify it: `/check verify web platform foundation & control plane`
 - [ ] Test it: `/test web platform foundation & control plane`
-- [ ] Review it: `/check review web platform foundation & control plane`
+- [x] Review it: `/check review web platform foundation & control plane`
 - [ ] Document it: `/document web platform foundation & control plane`
   Spec 0001. code in `worker/`, `custom/web/auth/`, `fyo/demux/`, `src/pages/web/`, `src/web/`, `rendererWeb.ts`
 
