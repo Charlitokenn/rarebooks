@@ -1,6 +1,6 @@
 # Scope: RareBooks Web Platform
 
-RareBooks is a bookkeeping app for small and medium businesses, forked from Frappe Books, today shipping as an Electron desktop app. This scope covers migrating it to a hosted, multi tenant web platform for the East African (Tanzania and Kenya) market. Phase and feature numbers below mirror `context/build-plan.md`, the project's own build plan, so the two stay in sync.
+RareBooks is a bookkeeping app for small and medium businesses, forked from Frappe Books, today shipping as an Electron desktop app. This scope covers migrating it to a hosted, multi tenant web platform for the East African (Tanzania and Kenya) market. Phase and feature numbers below mirror `context/build-plan.md`, the project's own build plan, so the two stay in sync. Phase 5 (features 17 to 26) is separate from the web migration: it improves how new users of the Microsoft Store desktop app start a trial, reach first value, and become paying customers.
 
 **Build approach:** Tracer Bullet (each feature built as a thin, complete vertical slice through every layer, working end to end, before the next one starts).
 **Workflow:** GA (after `/develop`: `/check verify`, then `/test`, then a fresh model `/check review`, then `/document`). The project default level of rigor, since this plan touches payments, auth, and multi tenant data. `/architect` is the recommended first stop for a feature with a real decision, but skippable when you already know the build. Any feature can carry its own tag (e.g. `· GA`) to do more or less.
@@ -27,6 +27,16 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 11 | Web notifications (ntfy) | Phase 4: Web Migration | in-progress |
 | 12 | Deploy & cutover readiness | Phase 4: Web Migration | planned |
 | 13 | Legal & compliance pages | Phase 4: Web Migration (addition) | planned |
+| 17 | Desktop build and test baseline | Phase 5: Foundation | planned |
+| 18 | Instant trial on first launch | Phase 5: Slice 1, trial to paid | planned |
+| 19 | Trial status and in app upgrade | Phase 5: Slice 1, trial to paid | planned |
+| 20 | Read only trial end with export | Phase 5: Slice 1, trial to paid | planned |
+| 21 | Onboarding funnel measurement | Phase 5: Slice 1, trial to paid | planned |
+| 22 | Site signup recognized in app | Phase 5: Slice 2, first value | planned |
+| 23 | Quick first run setup | Phase 5: Slice 2, first value | planned |
+| 24 | Stock list import and first sale checklist | Phase 5: Slice 2, first value | planned |
+| 25 | Set it up for me request | Phase 5: Slice 3, assisted setup | planned |
+| 26 | Offline promise for lifetime licenses | Phase 5: Slice 3, assisted setup | planned |
 
 ## Existing
 
@@ -210,6 +220,71 @@ Terms of Service, Privacy Policy, and basic compliance content, needed once real
 **Done when:** ToS and Privacy Policy pages are published and linked from signup and billing flows.
 - [ ] Build it: `/develop legal & compliance pages`
 
+## Phase 5: Desktop Onboarding
+
+Today a new desktop user needs a license key before they can see the product. This phase lets them start a trial inside the app, reach a real result with their own stock, and pay without leaving the app. Features use the project's Tracer Bullet approach: Slice 1 connects the whole path from first launch to payment, and later slices thicken it. Features that touch licensing, payment, or customer data keep the GA default; lower risk screens carry a `· Beta` tag.
+
+### 17. Desktop build and test baseline · Beta
+Make sure the desktop app can be packaged and tested reliably before its licensing changes. The scope records a test runner that doesn't work on this machine and a packaging config error.
+**Done when:** a clean install builds a Store package that launches and opens a company file, and the desktop test suite runs on this machine.
+- [ ] Build it: `/develop desktop build and test baseline`
+
+### 18. Instant trial on first launch · needs a decision
+Replace the first screen's license key wall with a short form that starts the 14 day trial right away. This removes the biggest drop off for people who install from the Store. Depends on 17.
+**Done when:** a new install with no key starts a device bound trial from inside the app; reinstalling doesn't restart it; the app holds no admin license credential; a failed connection shows a clear retry; and entering an existing key still works.
+- [ ] Design it (spec): `/architect instant trial on first launch`
+
+### 19. Trial status and in app upgrade · needs a decision
+Show the days left and let the user pay from inside the app, with no new key to paste. Includes deciding which plans a desktop trial can become, since the site lists annual and lifetime options. Depends on 18.
+**Done when:** a trial user always sees the days left, can pay by mobile money from the app, and is upgraded on the same device without entering a key; failed or abandoned payments leave the trial unchanged.
+- [ ] Design it (spec): `/architect trial status and in app upgrade`
+
+### 20. Read only trial end with export · needs a decision
+When a trial ends unpaid, keep the user's books viewable and exportable instead of redirecting every screen to the license page. This keeps the site's "your data, your choice" promise. Depends on 18.
+**Done when:** after expiry, a user can view records and reports and export them to Excel; every create, edit, delete, and POS action is refused with a clear path to pay; and paying restores full access with no data lost.
+- [ ] Design it (spec): `/architect read only trial end with export`
+
+### 21. Onboarding funnel measurement · needs a decision
+Report milestones so you can see where trial users drop off. Events cover steps like first launch, trial started, products loaded, first sale, and paid, and never include business records or amounts. Depends on 18 and 13.
+**Done when:** each milestone can be counted separately for Store and site signups, the privacy policy discloses it, and no customer record, amount, or file content leaves the device.
+- [ ] Design it (spec): `/architect onboarding funnel measurement`
+
+### 22. Site signup recognized in app · needs a decision
+Someone who already signed up on the site enters the same email or phone number in the app and continues their trial, with no key to find and paste. Depends on 18 and on the site work noted below.
+**Done when:** a site signup's details find their trial on first launch, a mistyped detail shows a clear way to recover, and paid license keys can't be claimed this way.
+- [ ] Design it (spec): `/architect site signup recognized in app`
+
+### 23. Quick first run setup · Beta · needs a decision
+Shorten the path into the app by creating the company file in a sensible default location, instead of asking new users to pick a folder and file name. Existing files stay easy to open.
+**Done when:** a new user reaches the app after entering only business name, email, and country; the chart of accounts follows the country; and they can still choose a location or open an existing file.
+- [ ] Design it (spec): `/architect quick first run setup`
+
+### 24. Stock list import and first sale checklist · Beta · needs a decision
+Guide new users to the result the site promises: their real stock in the app and a first sale that updates it. Replaces a first invoice as the activation goal. Depends on 23.
+**Done when:** a user can bring in their stock list from a simple template, fix rejected rows, record a first sale, and see the stock level change; the checklist tracks progress and can be dismissed.
+- [ ] Design it (spec): `/architect stock list import and first sale checklist`
+
+### 25. Set it up for me request · needs a decision
+Let a new user ask your team to load their records, and start the 14 days only once the data is ready, matching the order promised on the site. Includes deciding what's free during the trial, since pricing lists full digitizing under the paid Done For You plan. Depends on 18 and 24.
+**Done when:** a request from the app reaches your team with the customer's contact details, the app shows that setup is in progress, your team can start the 14 days when the data is ready, and the user is told when it starts.
+- [ ] Design it (spec): `/architect set it up for me request`
+
+### 26. Offline promise for lifetime licenses · needs a decision
+The site promises the lifetime plan runs 100% offline, but licenses currently need an online check within a 7 day limit. Decide which should change, so the product and the promise match. Depends on 17.
+**Done when:** a lifetime license behaves exactly as the site describes, including after a long time offline, and how a license can still be revoked is decided and recorded.
+- [ ] Design it (spec): `/architect offline promise for lifetime licenses`
+
+### Deferred
+- **Trial follow up messages:** email or WhatsApp messages triggered by what a trial user has or hasn't done · needs a decision. Worth doing once feature 21 shows where people stop.
+
+### Needed from the marketing site
+The site's code isn't in this repo, so these aren't feature rows, but this phase relies on them. Each was seen on rarebooks.cc on 2026-11-02, without submitting the trial form.
+- `/trial/download`, where the form sends people after signup, returned an empty HTTP 500. Check it in a browser first.
+- No Microsoft Store link was found on the homepage or in the setup docs.
+- The redirect puts the customer's name and email in the URL, on a page set up to load Google Tag Manager.
+- The trial section promises free digitizing of all records, while pricing lists it under the paid Done For You plan. Feature 25 needs the two to match.
+- The trial form needs to collect a WhatsApp number in plain language and offer the Store button next (feature 22).
+
 ## Note on file & image storage
 
 An earlier pass of this plan included a "tenant file & image storage" feature using Neon's S3 compatible object storage, per a preference Charles stated at the time. `context/architecture.md`'s Storage section says no shared storage bucket exists in either target currently, and that if one is ever needed it would likely be Cloudflare R2, not Neon storage, since Neon does not do blob storage. This is a real conflict between what was decided in this scope session and what the project's own architecture doc says. Dropped from this scope pass pending a decision; raise it with `/architect` (as its own feature) once you have picked a direction.
@@ -221,6 +296,8 @@ An earlier pass of this plan included a "tenant file & image storage" feature us
 Checked every `better-sqlite3` release between the original `9.2.2` and current `13.0.3`: there is no version that is simultaneously N-API-based (needed for the host install to succeed on modern Node) and capped at N-API ≤8 (needed for Electron 22). The only two real fixes are downgrading `better-sqlite3` (which reintroduces the original, confirmed-broken host install failure) or upgrading Electron itself (a large, separate migration — Electron 22 is EOL, and `npm audit` surfaces real CVEs against it independent of this issue). Neither is minimal, so neither has been applied.
 
 Dormant for now: nothing built or tested so far touches this, since the whole web migration (features 06 onward) never uses `better-sqlite3` at all — it's Desktop/Electron-only, for local SQLite storage. This will surface the moment `npm run dev` or a desktop package build is actually run. Worth resolving as part of whichever feature ends up owning the Electron version bump, or before then if Desktop development resumes first.
+
+Update 2026-11-02: `package.json` now pins `better-sqlite3` at `^9.2.2`, not `^13.0.3`, so the ceiling above may no longer apply. Feature 17 confirms this with a real package build.
 
 ## Legend
 
@@ -240,4 +317,4 @@ Dormant for now: nothing built or tested so far touches this, since the whole we
 - **needs a decision** = run `/architect` first; otherwise straight to `/develop`.
 - **Atomic build tasks live in the spec's `## Build plan`, not here**: the scope carries only the milestone rollup.
 - **Status** `planned` → `in-progress` → `done`, plus `existing` (pre-workflow) and `dropped` (de-scoped, kept for history).
-- **Workflow tier tag** beside a heading (e.g. `· GA`, `· Prototype`) sets that one feature's rigor above or below the project default (GA); none carry an override tag here, all inherit GA.
+- **Workflow tier tag** beside a heading (e.g. `· GA`, `· Prototype`) sets that one feature's rigor above or below the project default (GA); features 17, 23, and 24 carry `· Beta`, all others inherit GA.
